@@ -6,8 +6,7 @@ const IMAGE_STORE = 'images'
 
 export const defaultSettings = {
   siteName: 'AOV帳號展示所',
-  adminUsername: '',
-  adminPassword: '',
+  adminUsers: [],
   contactMethods: [
     { id: 'line', label: 'LINE', url: '' },
     { id: 'facebook', label: 'Facebook', url: '' },
@@ -34,6 +33,11 @@ export function loadSettings() {
     if (!raw) return defaultSettings
 
     const parsed = JSON.parse(raw)
+    const adminUsers = Array.isArray(parsed.adminUsers)
+      ? parsed.adminUsers
+      : parsed.adminUsername && parsed.adminPassword
+        ? [{ id: 'admin-1', username: parsed.adminUsername, password: parsed.adminPassword }]
+        : []
     const contactMethods = Array.isArray(parsed.contactMethods)
       ? defaultSettings.contactMethods.map((method, index) => ({
           ...method,
@@ -44,7 +48,7 @@ export function loadSettings() {
           url: index === 0 ? parsed.defaultContactUrl || '' : '',
         }))
 
-    return { ...defaultSettings, ...parsed, contactMethods }
+    return { ...defaultSettings, ...parsed, adminUsers, contactMethods }
   } catch {
     return defaultSettings
   }

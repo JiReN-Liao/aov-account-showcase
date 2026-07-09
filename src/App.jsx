@@ -121,7 +121,8 @@ function NavLink({ href, children }) {
 }
 
 function AdminAuthPage({ settings, setSettings, onLogin, target }) {
-  const hasAdminAccount = Boolean(settings.adminUsername && settings.adminPassword)
+  const adminUsers = getAdminUsers(settings)
+  const hasAdminAccount = adminUsers.length > 0
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -138,15 +139,14 @@ function AdminAuthPage({ settings, setSettings, onLogin, target }) {
     if (!hasAdminAccount) {
       setSettings((current) => ({
         ...current,
-        adminUsername: username.trim(),
-        adminPassword: password,
+        adminUsers: [{ id: crypto.randomUUID(), username: username.trim(), password }],
       }))
       onLogin()
       window.location.hash = `#/${target}`
       return
     }
 
-    if (username.trim() === settings.adminUsername && password === settings.adminPassword) {
+    if (adminUsers.some((user) => user.username === username.trim() && user.password === password)) {
       onLogin()
       window.location.hash = `#/${target}`
       return
@@ -535,7 +535,9 @@ function QuickStatus({ product, updateProduct, status }) {
 
 function SettingsPage({ settings, setSettings }) {
   const [draft, setDraft] = useState(settings)
-  const [adminPasswordDraft, setAdminPasswordDraft] = useState('')
+  const [adminUsersDraft, setAdminUsersDraft] = useState(() =>
+    getAdminUsers(settings).map((user) => ({ ...user, passwordDraft: '' })),
+  )
   const [saved, setSaved] = useState(false)
 
   const updateContactMethod = (index, patch) => {
@@ -549,14 +551,47 @@ function SettingsPage({ settings, setSettings }) {
 
   const submit = (event) => {
     event.preventDefault()
+    const adminUsers = adminUsersDraft
+      .map((user) => ({
+        id: user.id || crypto.randomUUID(),
+        username: user.username.trim(),
+        password: user.passwordDraft || user.password,
+      }))
+      .filter((user) => user.username && user.password)
+
+    if (!adminUsers.length) {
+      alert('至少需要保留一位管理員。')
+      return
+    }
+
     setSettings({
       ...draft,
-      adminUsername: draft.adminUsername.trim(),
-      adminPassword: adminPasswordDraft ? adminPasswordDraft : settings.adminPassword,
+      adminUsers,
     })
-    setAdminPasswordDraft('')
+    setAdminUsersDraft(adminUsers.map((user) => ({ ...user, passwordDraft: '' })))
     setSaved(true)
     setTimeout(() => setSaved(false), 1800)
+  }
+
+  const addAdminUser = () => {
+    setAdminUsersDraft((current) => [
+      ...current,
+      { id: crypto.randomUUID(), username: '', password: '', passwordDraft: '' },
+    ])
+  }
+
+  const updateAdminUser = (id, patch) => {
+    setAdminUsersDraft((current) => current.map((user) => (user.id === id ? { ...user, ...patch } : user)))
+  }
+
+  const removeAdminUser = (id) => {
+    setAdminUsersDraft((current) => {
+      if (current.length <= 1) {
+        alert('至少需要保留一位管理員。')
+        return current
+      }
+      return current.filter((user) => user.id !== id)
+    })
   }
 
   return (
@@ -595,27 +630,45 @@ function SettingsPage({ settings, setSettings }) {
           ))}
         </div>
         <div className="space-y-3 rounded-md border border-zinc-800 bg-zinc-900/60 p-3">
-          <h2 className="text-sm font-bold text-zinc-300">管理員帳號</h2>
-          <label className="block">
-            <span className="mb-1 block text-xs font-bold text-zinc-400">帳號</span>
-            <input
-              className="h-10 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3"
-              value={draft.adminUsername}
-              onChange={(event) => setDraft({ ...draft, adminUsername: event.target.value })}
-              autoComplete="username"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-bold text-zinc-400">新密碼</span>
-            <input
-              className="h-10 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3"
-              type="password"
-              value={adminPasswordDraft}
-              onChange={(event) => setAdminPasswordDraft(event.target.value)}
-              placeholder="留空代表不變更密碼"
-              autoComplete="new-password"
-            />
-          </label>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-bold text-zinc-300">管理員帳號</h2>
+            <button type="button" onClick={addAdminUser} className="rounded-md bg-zinc-100 px-3 py-2 text-sm font-black text-zinc-950">
+              新增管理員
+            </button>
+          </div>
+          <div className="space-y-3">
+            {adminUsersDraft.map((user, index) => (
+              <div key={user.id} className="grid gap-2 rounded-md border border-zinc-800 bg-zinc-950 p-3 sm:grid-cols-[1fr_1fr_auto]">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-bold text-zinc-400">帳號</span>
+                  <input
+                    className="h-10 w-full rounded-md border border-zinc-700 bg-zinc-900 px-3"
+                    value={user.username}
+                    onChange={(event) => updateAdminUser(user.id, { username: event.target.value })}
+                    autoComplete={index === 0 ? 'username' : 'off'}
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-bold text-zinc-400">新密碼</span>
+                  <input
+                    className="h-10 w-full rounded-md border border-zinc-700 bg-zinc-900 px-3"
+                    type="password"
+                    value={user.passwordDraft}
+                    onChange={(event) => updateAdminUser(user.id, { passwordDraft: event.target.value })}
+                    placeholder={user.password ? '留空代表不變更' : '新管理員必填'}
+                    autoComplete="new-password"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => removeAdminUser(user.id)}
+                  className="self-end rounded-md border border-red-800 px-3 py-2 text-sm font-bold text-red-300"
+                >
+                  刪除
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
         <button type="submit" className="rounded-md bg-yellow-300 px-4 py-2 font-black text-zinc-950">儲存設定</button>
         {saved && <p className="text-sm text-emerald-300">已儲存設定。</p>}
@@ -799,6 +852,18 @@ function getContactMethods(settings) {
 
 function hasContactMethods(settings) {
   return getContactMethods(settings).some((method) => method.url)
+}
+
+function getAdminUsers(settings) {
+  if (Array.isArray(settings.adminUsers) && settings.adminUsers.length) {
+    return settings.adminUsers
+  }
+
+  if (settings.adminUsername && settings.adminPassword) {
+    return [{ id: 'admin-1', username: settings.adminUsername, password: settings.adminPassword }]
+  }
+
+  return []
 }
 
 function buildContactUrl(url, code) {

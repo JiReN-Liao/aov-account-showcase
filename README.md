@@ -50,13 +50,13 @@ npm run build
 目前已部署到 GitHub Pages：
 
 ```text
-https://jiren-liao.github.io/aov-account-showcase-mvp/
+https://jiren-liao.github.io/aov-account-showcase/
 ```
 
 GitHub repo：
 
 ```text
-https://github.com/JiReN-Liao/aov-account-showcase-mvp
+https://github.com/JiReN-Liao/aov-account-showcase
 ```
 
 建議 0 成本部署方式：

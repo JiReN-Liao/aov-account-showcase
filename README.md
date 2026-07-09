@@ -88,6 +88,34 @@ https://github.com/JiReN-Liao/aov-account-showcase
 
 這條路線的限制是：管理後台會比較像「本機管理工具 + 發布到 GitHub」，不是雲端即時後台。好處是免費、穩、沒有 Supabase Free project pause 的問題。
 
+## 讓手機也看到商品
+
+手機看不到商品的原因是：原本後台上傳的資料只存在上傳那台電腦的瀏覽器。
+
+現在網站支援公開 catalog：
+
+- 公開商品文字：`public/catalog/products.json`
+- 公開商品圖片：`public/catalog/images/`
+
+發布流程：
+
+1. 在電腦後台整理商品並一鍵上架
+2. 點「匯出備份」下載 JSON
+3. 執行：
+
+```bash
+npm run publish:backup -- 路徑/備份檔.json
+```
+
+4. 執行：
+
+```bash
+npm run build
+npx wrangler pages deploy dist --project-name aov-shop --branch main --commit-dirty=true
+```
+
+部署後，手機會讀網站的公開 catalog，不再依賴手機自己的 localStorage。
+
 ## 主要檔案結構
 
 ```text

@@ -23,6 +23,17 @@ export function loadProducts() {
   }
 }
 
+export async function loadPublicCatalog() {
+  try {
+    const response = await fetch('./catalog/products.json', { cache: 'no-store' })
+    if (!response.ok) return []
+    const data = await response.json()
+    return Array.isArray(data.products) ? data.products : []
+  } catch {
+    return []
+  }
+}
+
 export function saveProducts(products) {
   localStorage.setItem(PRODUCT_KEY, JSON.stringify(products))
 }

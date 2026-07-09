@@ -4,6 +4,7 @@ import {
   defaultSettings,
   deleteImage,
   getImage,
+  loadPublicCatalog,
   loadProducts,
   loadSettings,
   putImage,
@@ -35,6 +36,13 @@ export default function App() {
     window.addEventListener('hashchange', onHashChange)
     return () => window.removeEventListener('hashchange', onHashChange)
   }, [])
+
+  useEffect(() => {
+    if (products.length) return
+    loadPublicCatalog().then((catalogProducts) => {
+      if (catalogProducts.length) setProductsState(catalogProducts)
+    })
+  }, [products.length])
 
   const setProducts = (next) => {
     setProductsState((current) => {
@@ -254,7 +262,7 @@ function ProductCard({ product, settings }) {
   return (
     <article className={`overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950 shadow-lg shadow-black/30 ${isSold ? 'opacity-75' : ''}`}>
       <a href={`#/product/${product.id}`} className="relative block h-36 bg-black sm:h-44">
-        <StoredImage imageKey={product.imageKey} alt={product.code} className="h-full w-full object-contain" />
+        <StoredImage imageKey={product.imageKey} imageUrl={product.imageUrl} alt={product.code} className="h-full w-full object-contain" />
         {isSold && <div className="absolute inset-0 grid place-items-center bg-black/60 text-lg font-black text-zinc-100">已售出</div>}
       </a>
       <div className="space-y-2 p-2.5">
@@ -288,7 +296,7 @@ function DetailPage({ products, settings, productId }) {
       <a href="#/" className="mb-3 inline-flex rounded-md border border-zinc-700 px-3 py-2 text-sm text-zinc-200">返回商品列表</a>
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <button type="button" onClick={() => setPreviewOpen(true)} className="min-h-[60vh] overflow-hidden rounded-lg border border-zinc-800 bg-black p-2">
-          <StoredImage imageKey={product.imageKey} alt={product.code} className="h-full max-h-[78vh] w-full object-contain" />
+          <StoredImage imageKey={product.imageKey} imageUrl={product.imageUrl} alt={product.code} className="h-full max-h-[78vh] w-full object-contain" />
         </button>
         <aside className="space-y-4 rounded-lg border border-zinc-800 bg-zinc-950 p-4">
           <div className="flex items-start justify-between gap-3">
@@ -309,7 +317,7 @@ function DetailPage({ products, settings, productId }) {
           <ContactButton product={product} settings={settings} />
         </aside>
       </section>
-      {previewOpen && <ImagePreview imageKey={product.imageKey} alt={product.code} onClose={() => setPreviewOpen(false)} />}
+      {previewOpen && <ImagePreview imageKey={product.imageKey} imageUrl={product.imageUrl} alt={product.code} onClose={() => setPreviewOpen(false)} />}
     </main>
   )
 }
@@ -486,6 +494,7 @@ function AdminPage({ products, settings, setProducts, setSettings }) {
       {previewProduct && (
         <ImagePreview
           imageKey={previewProduct.imageKey}
+          imageUrl={previewProduct.imageUrl}
           alt={previewProduct.code}
           onClose={() => setPreviewProduct(null)}
         />
@@ -505,7 +514,7 @@ function AdminRow({ product, updateProduct, removeProduct, openPreview }) {
           aria-label={`放大查看 ${product.code} 圖片`}
           title="點擊放大查看"
         >
-          <StoredImage imageKey={product.imageKey} alt={product.code} className="h-full w-full object-contain" />
+          <StoredImage imageKey={product.imageKey} imageUrl={product.imageUrl} alt={product.code} className="h-full w-full object-contain" />
         </button>
       </td>
       <td className="px-3 py-3 font-bold text-zinc-100">{product.code}</td>
@@ -677,10 +686,15 @@ function SettingsPage({ settings, setSettings }) {
   )
 }
 
-function StoredImage({ imageKey, alt, className, style }) {
+function StoredImage({ imageKey, imageUrl, alt, className, style }) {
   const [src, setSrc] = useState('')
 
   useEffect(() => {
+    if (imageUrl) {
+      setSrc(imageUrl)
+      return
+    }
+
     let url = ''
     let alive = true
     setSrc('')
@@ -693,13 +707,13 @@ function StoredImage({ imageKey, alt, className, style }) {
       alive = false
       if (url) URL.revokeObjectURL(url)
     }
-  }, [imageKey])
+  }, [imageKey, imageUrl])
 
   if (!src) return <div className={`${className} grid place-items-center text-xs text-zinc-600`} style={style}>無圖片</div>
   return <img src={src} alt={alt} className={className} style={style} loading="lazy" />
 }
 
-function ImagePreview({ imageKey, alt, onClose }) {
+function ImagePreview({ imageKey, imageUrl, alt, onClose }) {
   const [zoom, setZoom] = useState('fit')
 
   useEffect(() => {
@@ -738,6 +752,7 @@ function ImagePreview({ imageKey, alt, onClose }) {
         <div className="mx-auto flex min-h-[calc(100dvh-7rem)] min-w-full items-center justify-center">
           <StoredImage
             imageKey={imageKey}
+            imageUrl={imageUrl}
             alt={alt}
             className="block rounded-sm object-contain"
             style={

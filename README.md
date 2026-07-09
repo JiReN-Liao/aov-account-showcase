@@ -47,6 +47,18 @@ npm run build
 
 打包結果在 `dist/`。可以部署到 Cloudflare Pages、GitHub Pages、Netlify 或 Vercel 免費層。
 
+目前已部署到 GitHub Pages：
+
+```text
+https://jiren-liao.github.io/aov-account-showcase-mvp/
+```
+
+GitHub repo：
+
+```text
+https://github.com/JiReN-Liao/aov-account-showcase-mvp
+```
+
 建議 0 成本部署方式：
 
 - Cloudflare Pages：連 GitHub repo，Build command 填 `npm run build`，Output directory 填 `dist`
@@ -56,6 +68,19 @@ npm run build
 注意：目前資料存在每個瀏覽器本機。換電腦、換瀏覽器、清除瀏覽資料後，商品資料不會自動同步。
 
 更重要的是：純本機 MVP 部署成公開網站後，訪客不會看到你在自己瀏覽器後台上傳的商品，因為那些資料沒有伺服器同步。這一版適合先驗證操作流程與版型。若要讓所有買家都看到同一份商品資料，需要接 Supabase、其他後端，或改成靜態商品資料發布流程。
+
+## 免費半年以上且不綁付款的建議路線
+
+目前先用 GitHub Pages，不需要綁付款方式。GitHub Pages 官方限制包含 published site 不超過 1 GB、每月 100 GB soft bandwidth，對個人展示型賣場通常足夠。
+
+為了避免商品資料只存在瀏覽器，下一步建議把商品資料改成 repo 檔案：
+
+- 商品文字：`public/catalog/products.json`
+- 商品圖片：`public/catalog/images/`
+- 每次修改商品後 commit + push，GitHub Pages 重新發布
+- repo 本身就是資料備份，不會因瀏覽器清資料而消失
+
+這條路線的限制是：管理後台會比較像「本機管理工具 + 發布到 GitHub」，不是雲端即時後台。好處是免費、穩、沒有 Supabase Free project pause 的問題。
 
 ## 主要檔案結構
 

@@ -263,7 +263,7 @@ function ProductCard({ product, settings }) {
           <StatusChip status={product.status} />
         </div>
         {product.title && <p className="line-clamp-1 text-xs text-zinc-400">{product.title}</p>}
-        <p className="text-lg font-black text-yellow-300">{formatPrice(product.price)}</p>
+        {formatPrice(product.price) && <p className="text-lg font-black text-yellow-300">{formatPrice(product.price)}</p>}
         <ContactButton product={product} settings={settings} compact />
       </div>
     </article>
@@ -299,7 +299,7 @@ function DetailPage({ products, settings, productId }) {
             <StatusChip status={product.status} />
           </div>
           {product.title && <p className="text-lg font-bold text-zinc-200">{product.title}</p>}
-          <p className="text-3xl font-black text-yellow-300">{formatPrice(product.price)}</p>
+          {formatPrice(product.price) && <p className="text-3xl font-black text-yellow-300">{formatPrice(product.price)}</p>}
           {product.note && (
             <div>
               <h2 className="mb-2 text-sm font-bold text-zinc-300">備註</h2>
@@ -798,7 +798,7 @@ function buildContactUrl(url, code) {
 
 function formatPrice(price) {
   const value = Number(price || 0)
-  return value > 0 ? `NT$${currency.format(value)}` : '價格待補'
+  return value > 0 ? `NT$${currency.format(value)}` : ''
 }
 
 function blobToDataUrl(blob) {

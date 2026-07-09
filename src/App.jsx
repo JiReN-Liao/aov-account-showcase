@@ -647,7 +647,7 @@ function StoredImage({ imageKey, alt, className, style }) {
 }
 
 function ImagePreview({ imageKey, alt, onClose }) {
-  const [zoom, setZoom] = useState(100)
+  const [zoom, setZoom] = useState('fit')
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -660,7 +660,12 @@ function ImagePreview({ imageKey, alt, onClose }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/95">
       <div className="fixed left-0 right-0 top-0 z-10 flex items-center justify-end gap-2 border-b border-zinc-800 bg-black/90 p-3 backdrop-blur">
-        {[100, 150, 200].map((value) => (
+        {[
+          ['fit', '完整'],
+          [100, '100%'],
+          [150, '150%'],
+          [200, '200%'],
+        ].map(([value, label]) => (
           <button
             key={value}
             type="button"
@@ -669,7 +674,7 @@ function ImagePreview({ imageKey, alt, onClose }) {
               zoom === value ? 'bg-yellow-300 text-zinc-950' : 'bg-zinc-800 text-zinc-100'
             }`}
           >
-            {value}%
+            {label}
           </button>
         ))}
         <button type="button" onClick={onClose} className="rounded-md bg-zinc-100 px-3 py-2 font-bold text-zinc-950">
@@ -677,14 +682,25 @@ function ImagePreview({ imageKey, alt, onClose }) {
         </button>
       </div>
       <div className="h-dvh overflow-auto px-3 pb-8 pt-20">
-        <div className="mx-auto flex min-h-[calc(100dvh-7rem)] min-w-full items-start justify-center">
+        <div className="mx-auto flex min-h-[calc(100dvh-7rem)] min-w-full items-center justify-center">
           <StoredImage
             imageKey={imageKey}
             alt={alt}
-            className="block h-auto max-w-none rounded-sm object-contain"
-            style={{
-              width: `calc(${zoom}vw - 2rem)`,
-            }}
+            className="block rounded-sm object-contain"
+            style={
+              zoom === 'fit'
+                ? {
+                    maxWidth: 'calc(100vw - 1.5rem)',
+                    maxHeight: 'calc(100dvh - 7rem)',
+                    width: 'auto',
+                    height: 'auto',
+                  }
+                : {
+                    width: `calc(${zoom}vw - 2rem)`,
+                    maxWidth: 'none',
+                    height: 'auto',
+                  }
+            }
           />
         </div>
       </div>

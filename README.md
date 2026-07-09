@@ -53,6 +53,12 @@ npm run build
 https://jiren-liao.github.io/aov-account-showcase/
 ```
 
+另有較短、較專業且不顯示 GitHub 帳號的 Cloudflare Pages 網址：
+
+```text
+https://aov-shop.pages.dev/
+```
+
 GitHub repo：
 
 ```text

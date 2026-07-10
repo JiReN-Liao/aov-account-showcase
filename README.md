@@ -1,190 +1,105 @@
-# AOV帳號展示所 MVP
+# AOV帳號展示所
 
-傳說對決帳號展示型個人賣場 MVP。這是純前端靜態網站，不提供付款、購物車、會員、站內聊天、OCR、自動估價，也不保管帳號資料。
+《傳說對決》帳號展示型個人賣場。網站只提供商品展示與外部聯絡，不包含付款、購物車、會員、站內聊天、OCR 或自動估價。
 
-## 技術架構
+## 正式網址
 
-- React + Vite
-- Tailwind CSS
-- 商品文字資料：`localStorage`
-- 商品圖片：`IndexedDB`
-- 路由：Hash route，方便部署到免費靜態網站空間
-- 第一版不接後端、不接 Supabase
+- 商品牆：`https://aov-shop.pages.dev/`
+- 管理後台：`https://aov-shop.pages.dev/#/admin`
+- GitHub：`https://github.com/JiReN-Liao/aov-account-showcase`
 
-## 安裝
+## 架構
+
+- 前端：React + Vite + Tailwind CSS
+- 部署：Cloudflare Pages + Pages Functions
+- 商品、設定、管理員與操作紀錄：Cloudflare D1
+- 商品圖片：Cloudflare Workers KV
+- 管理員密碼：PBKDF2-SHA256 加鹽雜湊
+- D1 是唯一商品資料來源，不使用匯出/匯入同步
+
+目前規模可使用 Cloudflare 免費額度，不需要啟用 R2 或綁定付款方式。圖片使用不可變 key，商品更新使用 `version` 防止不同裝置互相覆蓋。
+
+## 本機安裝與啟動
 
 ```bash
 npm install
-```
-
-## 啟動開發環境
-
-```bash
 npm run dev
 ```
 
-打開 Vite 顯示的網址，通常是 `http://localhost:5173/`。
-
-## 管理員入口
-
-客人預設只會看到商品牆，不會看到後台或設定入口。
-
-管理員請直接開：
-
-```text
-#/admin
-```
-
-第一次進入會要求建立第一位管理員帳號與密碼。登入後才會看到「後台」「設定」「登出」。
-
-注意：這是純前端本機 MVP 的簡單保護，帳密存在瀏覽器 localStorage。正式公開管理後台建議改用 Supabase Auth 或後端登入。
-
-## 打包部署
+正式打包與檢查：
 
 ```bash
+npm test
+npm run lint
 npm run build
 ```
 
-打包結果在 `dist/`。可以部署到 Cloudflare Pages、GitHub Pages、Netlify 或 Vercel 免費層。
+## 後台操作
 
-目前已部署到 GitHub Pages：
+1. 開啟 `https://aov-shop.pages.dev/#/admin` 並登入。
+2. 點「批量上傳圖片」，可一次選取多張圖片。
+3. 每張圖片會建立一筆 `draft` 商品並自動產生 `AOV-001` 類編號。
+4. 在表格修改價格、狀態、備註與排序。
+5. 改成「出售中」或使用「一鍵上架」後，商品才會出現在商品牆。
+6. 設定頁可維護三個聯絡網址與新增其他管理員。
 
-```text
-https://jiren-liao.github.io/aov-account-showcase/
-```
+所有操作會直接寫入雲端；手機、電腦與買家看到同一份資料，不需要匯出或匯入。
 
-另有較短、較專業且不顯示 GitHub 帳號的 Cloudflare Pages 網址：
+## Codex 管理商品
 
-```text
-https://aov-shop.pages.dev/
-```
-
-GitHub repo：
-
-```text
-https://github.com/JiReN-Liao/aov-account-showcase
-```
-
-建議 0 成本部署方式：
-
-- Cloudflare Pages：連 GitHub repo，Build command 填 `npm run build`，Output directory 填 `dist`
-- GitHub Pages：上傳 `dist/` 或用 GitHub Actions 發布
-- Netlify / Vercel：同樣使用 `npm run build` 與 `dist`
-
-注意：目前資料存在每個瀏覽器本機。換電腦、換瀏覽器、清除瀏覽資料後，商品資料不會自動同步。
-
-更重要的是：純本機 MVP 部署成公開網站後，訪客不會看到你在自己瀏覽器後台上傳的商品，因為那些資料沒有伺服器同步。這一版適合先驗證操作流程與版型。若要讓所有買家都看到同一份商品資料，需要接 Supabase、其他後端，或改成靜態商品資料發布流程。
-
-## 免費半年以上且不綁付款的建議路線
-
-目前先用 GitHub Pages，不需要綁付款方式。GitHub Pages 官方限制包含 published site 不超過 1 GB、每月 100 GB soft bandwidth，對個人展示型賣場通常足夠。
-
-為了避免商品資料只存在瀏覽器，下一步建議把商品資料改成 repo 檔案：
-
-- 商品文字：`public/catalog/products.json`
-- 商品圖片：`public/catalog/images/`
-- 每次修改商品後 commit + push，GitHub Pages 重新發布
-- repo 本身就是資料備份，不會因瀏覽器清資料而消失
-
-這條路線的限制是：管理後台會比較像「本機管理工具 + 發布到 GitHub」，不是雲端即時後台。好處是免費、穩、沒有 Supabase Free project pause 的問題。
-
-## 讓手機也看到商品
-
-手機看不到商品的原因是：原本後台上傳的資料只存在上傳那台電腦的瀏覽器。
-
-現在網站支援公開 catalog：
-
-- 公開商品文字：`public/catalog/products.json`
-- 公開商品圖片：`public/catalog/images/`
-
-發布流程：
-
-1. 在電腦後台整理商品並一鍵上架
-2. 點「匯出備份」下載 JSON
-3. 執行：
+Codex 可透過 `scripts/aov-admin.mjs` 呼叫同一套管理 API：
 
 ```bash
-npm run publish:backup -- 路徑/備份檔.json
+npm run admin -- list
+npm run admin -- upload --file ./account.png --key image-aov-001
+npm run admin -- create --code AOV-001 --status draft --image-key image-aov-001
+npm run admin -- status --id PRODUCT_ID --status available
+npm run admin -- patch --id PRODUCT_ID --price 2500
+npm run admin -- delete --id PRODUCT_ID --delete-image image-aov-001
 ```
 
-4. 執行：
+CLI 從環境變數讀取連線資訊，不把密碼或 token 寫入 Git：
+
+```text
+AOV_API_URL=https://aov-shop.pages.dev
+AOV_ADMIN_TOKEN=<登入取得的短期 token>
+```
+
+所有修改會寫入 `audit_logs`，可追查是誰進行建立、修改、上架或刪除。
+
+## 主要檔案
+
+```text
+src/App.jsx                         前台、商品詳情、後台與設定頁
+src/storage.js                     前端 API client
+functions/api/catalog.js           公開商品 API
+functions/api/admin/               管理員登入與商品管理 API
+functions/api/images/[key].js      KV 圖片讀寫 API
+functions/_lib/                    驗證、商品映射、HTTP 與稽核共用程式
+migrations/0001_initial.sql        D1 schema
+scripts/aov-admin.mjs              Codex/命令列管理工具
+wrangler.toml                      Cloudflare D1、KV 與 Pages 設定
+```
+
+## 部署
+
+首次建立 Cloudflare 資源：
+
+```bash
+npx wrangler d1 create aov-shop
+npx wrangler kv namespace create AOV_STORE
+npx wrangler d1 migrations apply aov-shop --remote
+```
+
+更新正式站：
 
 ```bash
 npm run build
 npx wrangler pages deploy dist --project-name aov-shop --branch main --commit-dirty=true
 ```
 
-部署後，手機會讀網站的公開 catalog，不再依賴手機自己的 localStorage。
+目前正式 D1 與 KV binding 已寫入 `wrangler.toml`。更多部署細節見 `docs/cloudflare-d1.md`。
 
-## 主要檔案結構
+## 日後擴充
 
-```text
-src/
-  App.jsx       前台商品牆、詳情頁、管理後台、設定頁
-  storage.js   localStorage 與 IndexedDB 資料存取
-  index.css    Tailwind 與全域樣式
-tailwind.config.js
-index.html
-```
-
-## 修改聯絡購買網址
-
-管理員登入後進入「設定」頁，填入三個聯絡方式，例如 LINE、Facebook、Instagram。
-
-買家點擊「聯絡購買」後，會先看到三個聯絡選項，再選擇想用的平台聯絡。
-
-聯絡按鈕會自動在網址加上 `text=你好，我想詢問商品 AOV-001` 這類商品編號文字。部分平台若不支援 `text` 參數，仍會正常跳轉到原網址。
-
-設定頁也可以新增、修改、刪除管理員帳號。既有管理員的密碼欄位留空代表不變更密碼。
-
-## 批量上傳圖片
-
-1. 進入「後台」
-2. 點擊「批量上傳圖片」
-3. 一次選多張圖片
-4. 系統會把每張圖片存入 IndexedDB
-5. 每張圖片會自動建立一筆商品
-6. 商品編號會自動生成，例如 `AOV-001`
-7. 新商品預設狀態是 `草稿`
-
-草稿商品不會顯示在前台。
-
-## 修改商品價格與狀態
-
-進入「後台」表格，可以直接編輯：
-
-- 標題
-- 價格
-- 狀態
-- 備註
-- 排序
-- 匯出備份 / 匯入備份
-
-將狀態改成「出售中」「洽談中」或「已售出」後，前台才會顯示。狀態為「草稿」或「隱藏」不會顯示在前台。
-
-後台也有「一鍵上架」按鈕，可以把所有草稿商品一次改成「出售中」。已售出、洽談中、隱藏的商品不會被變更。
-
-## 備份與還原
-
-後台提供「匯出備份」與「匯入備份」：
-
-- 匯出備份會產生 JSON 檔，包含商品文字資料、設定與圖片 base64
-- 匯入備份會覆蓋目前瀏覽器內的商品、設定與圖片
-- 建議每次大量更新商品後都匯出一份備份，避免瀏覽器清除資料或換電腦時遺失
-
-## 後續接 Supabase 時需要改哪裡
-
-主要改 `src/storage.js`：
-
-- `loadProducts` / `saveProducts` 改成讀寫 Supabase products table
-- `putImage` / `getImage` / `deleteImage` / `clearImages` 改成 Supabase Storage
-- 商品 `imageKey` 可改成 storage path 或 public URL
-- 設定資料可改成 settings table
-
-`src/App.jsx` 的 UI 可以大多保留，只需要把同步方式從即時 localStorage 改成 async API 呼叫，並加上 loading/error 狀態。
-
-## 維護注意
-
-- 這版適合個人展示與本機管理，部署成本低，也不需要伺服器維護。
-- 若商品要跨裝置同步、多人管理、公開後台登入、備份資料，就應該進入 Supabase 或其他後端版本。
-- 不要把帳號密碼、OTP、付款資訊或完整個資放進商品備註。
+商品與圖片 API 已集中封裝。若之後啟用 R2，只需替換 `functions/api/images/[key].js` 與 `wrangler.toml` 的圖片 binding；前台與商品 D1 schema 不需重做。若改用 Supabase，主要替換 `src/storage.js` 與 `functions/api/`，UI 可繼續沿用。

@@ -1,0 +1,12 @@
+name = "aov-shop"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-07-09"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "aov-shop"
+database_id = "7a21af99-f7c1-4abe-ac69-4e33fb678184"
+
+[[kv_namespaces]]
+binding = "AOV_STORE"
+id = "79cf460059ac4c69b2237d82cfb0818e"

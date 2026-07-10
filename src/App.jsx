@@ -1,16 +1,19 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  clearImages,
+  createProducts,
   defaultSettings,
   deleteImage,
-  getImage,
-  loadPublicCatalog,
+  loadCloudCatalog,
   loadProducts,
   loadSettings,
+  listAdminCatalog,
+  loginAdmin,
   putImage,
-  resetLocalData,
-  saveProducts,
-  saveSettings,
+  saveAdminSettings,
+  softDeleteProduct,
+  setupAdmin,
+  updateProduct as updateProductApi,
+  updateProductStatus,
 } from './storage'
 
 const STATUSES = {
@@ -29,7 +32,9 @@ export default function App() {
   const [products, setProductsState] = useState(() => loadProducts())
   const [settings, setSettingsState] = useState(() => loadSettings())
   const [route, setRoute] = useState(() => parseRoute(window.location.hash))
-  const [isAdmin, setIsAdmin] = useState(() => sessionStorage.getItem(ADMIN_SESSION_KEY) === 'true')
+  const [adminToken, setAdminToken] = useState(() => sessionStorage.getItem(ADMIN_SESSION_KEY) || '')
+  const [syncError, setSyncError] = useState('')
+  const isAdmin = Boolean(adminToken)
 
   useEffect(() => {
     const onHashChange = () => setRoute(parseRoute(window.location.hash))
@@ -38,16 +43,32 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (products.length) return
-    loadPublicCatalog().then((catalogProducts) => {
-      if (catalogProducts.length) setProductsState(catalogProducts)
-    })
-  }, [products.length])
+    loadCloudCatalog()
+      .then((catalog) => {
+        if (Array.isArray(catalog.products)) setProductsState(catalog.products)
+        if (catalog.settings) setSettingsState((current) => ({ ...current, ...catalog.settings }))
+      })
+      .catch((caught) => setSyncError(caught.message || '無法載入雲端商品，請稍後重新整理。'))
+  }, [])
+
+  useEffect(() => {
+    if (!adminToken) return
+    listAdminCatalog(adminToken)
+      .then((catalog) => {
+        if (Array.isArray(catalog.products)) setProductsState(catalog.products)
+        setSettingsState((current) => ({
+          ...current,
+          ...(catalog.settings || {}),
+          adminUsers: Array.isArray(catalog.adminUsers) ? catalog.adminUsers : current.adminUsers,
+          hasAdminAccount: true,
+        }))
+      })
+      .catch((caught) => setSyncError(caught.message || '管理資料載入失敗，請重新登入。'))
+  }, [adminToken])
 
   const setProducts = (next) => {
     setProductsState((current) => {
       const resolved = typeof next === 'function' ? next(current) : next
-      saveProducts(resolved)
       return resolved
     })
   }
@@ -55,19 +76,18 @@ export default function App() {
   const setSettings = (next) => {
     setSettingsState((current) => {
       const resolved = typeof next === 'function' ? next(current) : next
-      saveSettings(resolved)
       return resolved
     })
   }
 
-  const pageProps = { products, settings, setProducts, setSettings }
-  const loginAdmin = () => {
-    sessionStorage.setItem(ADMIN_SESSION_KEY, 'true')
-    setIsAdmin(true)
+  const pageProps = { products, settings, setProducts, setSettings, syncError }
+  const loginAdminSession = (token) => {
+    sessionStorage.setItem(ADMIN_SESSION_KEY, token)
+    setAdminToken(token)
   }
   const logoutAdmin = () => {
     sessionStorage.removeItem(ADMIN_SESSION_KEY)
-    setIsAdmin(false)
+    setAdminToken('')
     window.location.hash = '#/'
   }
 
@@ -77,9 +97,9 @@ export default function App() {
       {route.page === 'detail' ? (
         <DetailPage {...pageProps} productId={route.id} />
       ) : route.page === 'admin' ? (
-        isAdmin ? <AdminPage {...pageProps} /> : <AdminAuthPage settings={settings} setSettings={setSettings} onLogin={loginAdmin} target="admin" />
+        isAdmin ? <AdminPage {...pageProps} adminToken={adminToken} /> : <AdminAuthPage settings={settings} setSettings={setSettings} onLogin={loginAdminSession} target="admin" />
       ) : route.page === 'settings' ? (
-        isAdmin ? <SettingsPage {...pageProps} /> : <AdminAuthPage settings={settings} setSettings={setSettings} onLogin={loginAdmin} target="settings" />
+        isAdmin ? <SettingsPage {...pageProps} adminToken={adminToken} /> : <AdminAuthPage settings={settings} setSettings={setSettings} onLogin={loginAdminSession} target="settings" />
       ) : (
         <HomePage {...pageProps} />
       )}
@@ -129,13 +149,12 @@ function NavLink({ href, children }) {
 }
 
 function AdminAuthPage({ settings, setSettings, onLogin, target }) {
-  const adminUsers = getAdminUsers(settings)
-  const hasAdminAccount = adminUsers.length > 0
+  const hasAdminAccount = Boolean(settings.hasAdminAccount || getAdminUsers(settings).length)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
 
-  const submit = (event) => {
+  const submit = async (event) => {
     event.preventDefault()
     setError('')
 
@@ -145,22 +164,28 @@ function AdminAuthPage({ settings, setSettings, onLogin, target }) {
     }
 
     if (!hasAdminAccount) {
-      setSettings((current) => ({
-        ...current,
-        adminUsers: [{ id: crypto.randomUUID(), username: username.trim(), password }],
-      }))
-      onLogin()
-      window.location.hash = `#/${target}`
+      try {
+        const result = await setupAdmin(username.trim(), password)
+        setSettings((current) => ({
+          ...current,
+          hasAdminAccount: true,
+        }))
+        onLogin(result.token)
+        window.location.hash = `#/${target}`
+      } catch (error) {
+        setError(error.message)
+      }
       return
     }
 
-    if (adminUsers.some((user) => user.username === username.trim() && user.password === password)) {
-      onLogin()
+    try {
+      const result = await loginAdmin(username.trim(), password)
+      onLogin(result.token)
       window.location.hash = `#/${target}`
       return
+    } catch (error) {
+      setError(error.message)
     }
-
-    setError('帳號或密碼不正確。')
   }
 
   return (
@@ -169,10 +194,10 @@ function AdminAuthPage({ settings, setSettings, onLogin, target }) {
         <div>
           <h1 className="text-2xl font-black">{hasAdminAccount ? '管理員登入' : '建立管理員帳號'}</h1>
           <p className="mt-2 text-sm leading-6 text-zinc-400">
-            {hasAdminAccount ? '登入後才能進入後台與設定頁。' : '第一次使用請先建立本機管理員帳號。'}
+            {hasAdminAccount ? '登入後才能進入後台與設定頁。' : '第一次使用請先建立雲端管理員帳號。'}
           </p>
           <p className="mt-2 rounded-md border border-amber-900 bg-amber-950/60 p-2 text-xs leading-5 text-amber-200">
-            這是純前端本機 MVP 的簡單保護，不是正式後端登入。正式公開管理後台建議改用 Supabase Auth。
+            管理員帳密經雜湊後存於 Cloudflare D1，登入階段不會把密碼傳回瀏覽器。
           </p>
         </div>
         <label className="block">
@@ -213,7 +238,7 @@ function HomePage({ products, settings }) {
     const filtered = products
       .filter((product) => PUBLIC_STATUSES.includes(product.status))
       .filter((product) => {
-        const target = [product.code, product.title, product.note].join(' ').toLowerCase()
+        const target = [product.code, product.title, product.description].join(' ').toLowerCase()
         return (!search || target.includes(search)) && (status === 'all' || product.status === status)
       })
 
@@ -308,10 +333,10 @@ function DetailPage({ products, settings, productId }) {
           </div>
           {product.title && <p className="text-lg font-bold text-zinc-200">{product.title}</p>}
           {formatPrice(product.price) && <p className="text-3xl font-black text-yellow-300">{formatPrice(product.price)}</p>}
-          {product.note && (
+          {product.description && (
             <div>
               <h2 className="mb-2 text-sm font-bold text-zinc-300">備註</h2>
-              <p className="whitespace-pre-wrap rounded-md bg-zinc-900 p-3 text-sm leading-6 text-zinc-200">{product.note}</p>
+              <p className="whitespace-pre-wrap rounded-md bg-zinc-900 p-3 text-sm leading-6 text-zinc-200">{product.description}</p>
             </div>
           )}
           <ContactButton product={product} settings={settings} />
@@ -322,9 +347,32 @@ function DetailPage({ products, settings, productId }) {
   )
 }
 
-function AdminPage({ products, settings, setProducts, setSettings }) {
+function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
   const [message, setMessage] = useState('')
   const [previewProduct, setPreviewProduct] = useState(null)
+  const queues = useRef(new Map())
+  const versions = useRef(new Map())
+
+  products.forEach((product) => versions.current.set(product.id, product.version || 1))
+
+  const queueProductOperation = (id, operation, patch = {}) => {
+    if (Object.keys(patch).length) {
+      const now = new Date().toISOString()
+      setProducts((current) => current.map((product) => (product.id === id ? { ...product, ...patch, updatedAt: now } : product)))
+    }
+    const previous = queues.current.get(id) || Promise.resolve()
+    const task = previous.catch(() => {}).then(async () => {
+      const version = versions.current.get(id) || 1
+      const result = await operation(version)
+      if (result.product) {
+        versions.current.set(id, result.product.version)
+        setProducts((current) => current.map((product) => (product.id === id ? { ...product, version: result.product.version, updatedAt: result.product.updatedAt } : product)))
+      }
+      return result
+    }).catch((error) => setMessage(error.message || 'Cloud update failed. Reload to resolve a conflict.'))
+    queues.current.set(id, task)
+    return task
+  }
 
   const nextCodeNumber = () => products.reduce((max, product) => {
     const match = product.code?.match(/AOV-(\d+)/)
@@ -341,19 +389,25 @@ function AdminPage({ products, settings, setProducts, setSettings }) {
     for (const [index, file] of files.entries()) {
       const id = crypto.randomUUID()
       const code = `AOV-${String(start + index).padStart(3, '0')}`
-      const imageKey = `image-${id}`
-      await putImage(imageKey, file)
-      created.push({ id, code, title: '', price: '', status: 'draft', note: '', imageKey, contactUrl: '', sortOrder: products.length + index + 1, createdAt: now, updatedAt: now })
+      const imageKey = `img-${id}`
+      const upload = await putImage(imageKey, file, adminToken)
+      created.push({ id, code, title: '', description: '', price: '', status: 'draft', note: '', imageKey, sortOrder: products.length + index + 1, createdAt: now, updatedAt: now, version: 1 })
+      if (upload?.imageUrl) created[created.length - 1].imageUrl = upload.imageUrl
     }
 
-    setProducts([...products, ...created])
+    const result = await createProducts(created, adminToken)
+    const saved = result.products || created
+    saved.forEach((product) => versions.current.set(product.id, product.version || 1))
+    setProducts([...products, ...saved])
     setMessage(`已新增 ${created.length} 筆草稿商品，可在下方批量編輯後發布。`)
     event.target.value = ''
   }
 
   const updateProduct = (id, patch) => {
-    const now = new Date().toISOString()
-    setProducts((current) => current.map((product) => (product.id === id ? { ...product, ...patch, updatedAt: now } : product)))
+    const operation = patch.status && Object.keys(patch).length === 1
+      ? (version) => updateProductStatus(id, patch.status, version, adminToken)
+      : (version) => updateProductApi(id, patch, version, adminToken)
+    return queueProductOperation(id, operation, patch)
   }
 
   const publishDrafts = () => {
@@ -364,78 +418,39 @@ function AdminPage({ products, settings, setProducts, setSettings }) {
     }
     if (!confirm(`確定將 ${drafts.length} 筆草稿商品一鍵上架為出售中？`)) return
 
-    const now = new Date().toISOString()
-    setProducts((current) =>
-      current.map((product) =>
-        product.status === 'draft' ? { ...product, status: 'available', updatedAt: now } : product,
-      ),
-    )
+    drafts.forEach((product) => updateProduct(product.id, { status: 'available' }))
     setMessage(`已一鍵上架 ${drafts.length} 筆草稿商品。`)
   }
 
   const removeProduct = async (product) => {
     if (!confirm(`確定刪除 ${product.code}？圖片與商品資料都會移除。`)) return
-    await deleteImage(product.imageKey)
+    try {
+      await softDeleteProduct(product.id, versions.current.get(product.id) || product.version || 1, adminToken)
+      await deleteImage(product.imageKey, adminToken)
+    } catch (caught) {
+      setMessage(caught.message || '雲端商品刪除失敗，請重新整理後再試。')
+      return
+    }
     setProducts((current) => current.filter((item) => item.id !== product.id))
+    setMessage(`已刪除 ${product.code}。`)
   }
 
   const clearAll = async () => {
-    if (!confirm('確定清空全部測試資料？這會刪除 localStorage 商品資料與 IndexedDB 圖片。')) return
-    resetLocalData()
-    await clearImages()
-    setProducts([])
-    setMessage('已清空全部測試資料。')
-  }
-
-  const exportBackup = async () => {
-    const images = {}
-    for (const product of products) {
-      const record = await getImage(product.imageKey)
-      if (record?.blob) {
-        images[product.imageKey] = {
-          dataUrl: await blobToDataUrl(record.blob),
-          name: record.name,
-          type: record.type,
-          size: record.size,
-        }
-      }
-    }
-
-    const payload = {
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      settings,
-      products,
-      images,
-    }
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `aov-marketplace-backup-${new Date().toISOString().slice(0, 10)}.json`
-    link.click()
-    URL.revokeObjectURL(url)
-  }
-
-  const importBackup = async (event) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    if (!confirm('匯入備份會覆蓋目前本機商品、設定與圖片，確定繼續？')) {
-      event.target.value = ''
+    if (!products.length) {
+      setMessage('目前沒有商品需要清空。')
       return
     }
-
-    const payload = JSON.parse(await file.text())
-    await clearImages()
-    const imageEntries = Object.entries(payload.images || {})
-    for (const [imageKey, image] of imageEntries) {
-      const blob = dataUrlToBlob(image.dataUrl)
-      await putImage(imageKey, new File([blob], image.name || imageKey, { type: image.type || blob.type }))
+    if (!confirm(`確定清空全部 ${products.length} 筆雲端商品與圖片？此操作無法復原。`)) return
+    try {
+      for (const product of products) {
+        await softDeleteProduct(product.id, versions.current.get(product.id) || product.version || 1, adminToken)
+        if (product.imageKey) await deleteImage(product.imageKey, adminToken)
+      }
+      setProducts([])
+      setMessage('已清空全部雲端測試資料。')
+    } catch (caught) {
+      setMessage(caught.message || '清空失敗，請重新整理確認剩餘商品。')
     }
-    setSettings({ ...defaultSettings, ...(payload.settings || {}) })
-    setProducts(Array.isArray(payload.products) ? payload.products : [])
-    setMessage(`已匯入備份：${Array.isArray(payload.products) ? payload.products.length : 0} 筆商品。`)
-    event.target.value = ''
   }
 
   return (
@@ -443,7 +458,7 @@ function AdminPage({ products, settings, setProducts, setSettings }) {
       <section className="mb-4 grid gap-3 rounded-lg border border-zinc-800 bg-zinc-950 p-4 lg:grid-cols-[1fr_auto]">
         <div>
           <h1 className="text-2xl font-black">管理後台</h1>
-          <p className="mt-1 text-sm text-zinc-400">批量上傳圖片會自動建立草稿商品，圖片存 IndexedDB，文字資料存 localStorage。純靜態部署，第一版沒有伺服器費用。</p>
+          <p className="mt-1 text-sm text-zinc-400">批量上傳會建立草稿商品。文字資料由 D1 儲存，圖片由 Cloudflare KV 儲存。</p>
           {hasContactMethods(settings) ? <p className="mt-2 text-sm text-zinc-300">目前已有聯絡方式可供買家選擇。</p> : <p className="mt-2 text-sm text-amber-300">尚未設定聯絡方式，請到設定頁填入 LINE、Facebook 或 Instagram 連結。</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -455,16 +470,12 @@ function AdminPage({ products, settings, setProducts, setSettings }) {
             一鍵上架
           </button>
           <a href="#/settings" className="rounded-md border border-zinc-700 px-4 py-2 font-bold text-zinc-100">設定聯絡網址</a>
-          <button type="button" onClick={exportBackup} className="rounded-md border border-zinc-700 px-4 py-2 font-bold text-zinc-100">匯出備份</button>
-          <label className="cursor-pointer rounded-md border border-zinc-700 px-4 py-2 font-bold text-zinc-100">
-            匯入備份
-            <input className="hidden" type="file" accept="application/json" onChange={importBackup} />
-          </label>
           <button type="button" onClick={clearAll} className="rounded-md border border-red-800 px-4 py-2 font-bold text-red-300">清空測試資料</button>
         </div>
       </section>
 
       {message && <p className="mb-3 rounded-md border border-emerald-800 bg-emerald-950 px-3 py-2 text-sm text-emerald-200">{message}</p>}
+      {syncError && <p className="mb-3 rounded-md border border-red-800 bg-red-950 px-3 py-2 text-sm text-red-200">同步失敗：{syncError}</p>}
 
       {products.length ? (
         <section className="overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-950">
@@ -542,12 +553,19 @@ function QuickStatus({ product, updateProduct, status }) {
   return <button type="button" onClick={() => updateProduct(product.id, { status })} className={`rounded px-2 py-1 text-xs ${product.status === status ? 'bg-yellow-300 text-zinc-950' : 'bg-zinc-800 text-zinc-300'}`}>{STATUSES[status].label}</button>
 }
 
-function SettingsPage({ settings, setSettings }) {
+function SettingsPage({ settings, setSettings, adminToken }) {
   const [draft, setDraft] = useState(settings)
   const [adminUsersDraft, setAdminUsersDraft] = useState(() =>
-    getAdminUsers(settings).map((user) => ({ ...user, passwordDraft: '' })),
+    getAdminUsers(settings).map((user) => ({ ...user, passwordDraft: '', isNew: false })),
   )
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+
+  useEffect(() => {
+    setDraft(settings)
+    setAdminUsersDraft(getAdminUsers(settings).map((user) => ({ ...user, passwordDraft: '', isNew: false })))
+  }, [settings])
 
   const updateContactMethod = (index, patch) => {
     setDraft((current) => ({
@@ -558,34 +576,41 @@ function SettingsPage({ settings, setSettings }) {
     }))
   }
 
-  const submit = (event) => {
+  const submit = async (event) => {
     event.preventDefault()
-    const adminUsers = adminUsersDraft
-      .map((user) => ({
-        id: user.id || crypto.randomUUID(),
-        username: user.username.trim(),
-        password: user.passwordDraft || user.password,
-      }))
-      .filter((user) => user.username && user.password)
+    const adminUsers = adminUsersDraft.map((user) => ({
+      id: user.id,
+      username: user.username.trim(),
+      ...(user.passwordDraft ? { password: user.passwordDraft } : {}),
+    }))
 
-    if (!adminUsers.length) {
-      alert('至少需要保留一位管理員。')
+    if (!adminUsers.length || adminUsers.some((user) => !user.username)) {
+      alert('至少需要保留一位有帳號名稱的管理員。')
+      return
+    }
+    if (adminUsersDraft.some((user) => user.isNew && user.passwordDraft.length < 12)) {
+      alert('新管理員密碼至少需要 12 個字元。')
       return
     }
 
-    setSettings({
-      ...draft,
-      adminUsers,
-    })
-    setAdminUsersDraft(adminUsers.map((user) => ({ ...user, passwordDraft: '' })))
-    setSaved(true)
-    setTimeout(() => setSaved(false), 1800)
+    setSaving(true)
+    setSaveError('')
+    try {
+      await saveAdminSettings(draft, adminUsers, adminToken)
+      setSettings({ ...draft, adminUsers })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 1800)
+    } catch (caught) {
+      setSaveError(caught.message || '設定儲存失敗。')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const addAdminUser = () => {
     setAdminUsersDraft((current) => [
       ...current,
-      { id: crypto.randomUUID(), username: '', password: '', passwordDraft: '' },
+      { id: crypto.randomUUID(), username: '', passwordDraft: '', isNew: true },
     ])
   }
 
@@ -664,23 +689,22 @@ function SettingsPage({ settings, setSettings }) {
                     type="password"
                     value={user.passwordDraft}
                     onChange={(event) => updateAdminUser(user.id, { passwordDraft: event.target.value })}
-                    placeholder={user.password ? '留空代表不變更' : '新管理員必填'}
+                    placeholder={user.isNew ? '至少 12 個字元' : '留空代表不變更'}
                     autoComplete="new-password"
                   />
                 </label>
-                <button
-                  type="button"
-                  onClick={() => removeAdminUser(user.id)}
-                  className="self-end rounded-md border border-red-800 px-3 py-2 text-sm font-bold text-red-300"
-                >
+                <button type="button" onClick={() => removeAdminUser(user.id)} className="self-end rounded-md border border-red-800 px-3 py-2 text-sm font-bold text-red-300">
                   刪除
                 </button>
               </div>
             ))}
           </div>
         </div>
-        <button type="submit" className="rounded-md bg-yellow-300 px-4 py-2 font-black text-zinc-950">儲存設定</button>
+        <button type="submit" disabled={saving} className="rounded-md bg-yellow-300 px-4 py-2 font-black text-zinc-950 disabled:opacity-60">
+          {saving ? '儲存中' : '儲存設定'}
+        </button>
         {saved && <p className="text-sm text-emerald-300">已儲存設定。</p>}
+        {saveError && <p className="text-sm text-red-300">{saveError}</p>}
       </form>
     </main>
   )
@@ -694,19 +718,7 @@ function StoredImage({ imageKey, imageUrl, alt, className, style }) {
       setSrc(imageUrl)
       return
     }
-
-    let url = ''
-    let alive = true
-    setSrc('')
-    getImage(imageKey).then((record) => {
-      if (!alive || !record?.blob) return
-      url = URL.createObjectURL(record.blob)
-      setSrc(url)
-    })
-    return () => {
-      alive = false
-      if (url) URL.revokeObjectURL(url)
-    }
+    setSrc(imageKey ? `./api/images/${encodeURIComponent(imageKey)}` : '')
   }, [imageKey, imageUrl])
 
   if (!src) return <div className={`${className} grid place-items-center text-xs text-zinc-600`} style={style}>無圖片</div>
@@ -895,26 +907,6 @@ function buildContactUrl(url, code) {
 function formatPrice(price) {
   const value = Number(price || 0)
   return value > 0 ? `NT$${currency.format(value)}` : ''
-}
-
-function blobToDataUrl(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result)
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(blob)
-  })
-}
-
-function dataUrlToBlob(dataUrl) {
-  const [meta, data] = dataUrl.split(',')
-  const mime = meta.match(/data:(.*);base64/)?.[1] || 'application/octet-stream'
-  const binary = atob(data)
-  const bytes = new Uint8Array(binary.length)
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index)
-  }
-  return new Blob([bytes], { type: mime })
 }
 
 function EmptyState({ title, text }) {

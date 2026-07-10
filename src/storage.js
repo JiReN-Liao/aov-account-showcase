@@ -1,9 +1,3 @@
-const PRODUCT_KEY = 'aov-marketplace:products:v1'
-const SETTINGS_KEY = 'aov-marketplace:settings:v1'
-const DB_NAME = 'aov-marketplace-images'
-const DB_VERSION = 1
-const IMAGE_STORE = 'images'
-
 export const defaultSettings = {
   siteName: 'AOV帳號展示所',
   adminUsers: [],
@@ -14,125 +8,103 @@ export const defaultSettings = {
   ],
 }
 
+async function requestJson(path, options = {}) {
+  const response = await fetch(path, { cache: 'no-store', ...options })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    const error = new Error(data.error || 'Request failed.')
+    error.code = data.code
+    error.status = response.status
+    throw error
+  }
+  return data
+}
+
 export function loadProducts() {
-  try {
-    const raw = localStorage.getItem(PRODUCT_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch {
-    return []
-  }
+  return []
 }
 
-export async function loadPublicCatalog() {
-  try {
-    const response = await fetch('./catalog/products.json', { cache: 'no-store' })
-    if (!response.ok) return []
-    const data = await response.json()
-    return Array.isArray(data.products) ? data.products : []
-  } catch {
-    return []
-  }
+export function loadCloudCatalog() {
+  return requestJson('/api/catalog')
 }
 
-export function saveProducts(products) {
-  localStorage.setItem(PRODUCT_KEY, JSON.stringify(products))
-}
-
-export function loadSettings() {
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY)
-    if (!raw) return defaultSettings
-
-    const parsed = JSON.parse(raw)
-    const adminUsers = Array.isArray(parsed.adminUsers)
-      ? parsed.adminUsers
-      : parsed.adminUsername && parsed.adminPassword
-        ? [{ id: 'admin-1', username: parsed.adminUsername, password: parsed.adminPassword }]
-        : []
-    const contactMethods = Array.isArray(parsed.contactMethods)
-      ? defaultSettings.contactMethods.map((method, index) => ({
-          ...method,
-          ...(parsed.contactMethods[index] || {}),
-        }))
-      : defaultSettings.contactMethods.map((method, index) => ({
-          ...method,
-          url: index === 0 ? parsed.defaultContactUrl || '' : '',
-        }))
-
-    return { ...defaultSettings, ...parsed, adminUsers, contactMethods }
-  } catch {
-    return defaultSettings
-  }
-}
-
-export function saveSettings(settings) {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...defaultSettings, ...settings }))
-}
-
-function openImageDb() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION)
-
-    request.onupgradeneeded = () => {
-      const db = request.result
-      if (!db.objectStoreNames.contains(IMAGE_STORE)) {
-        db.createObjectStore(IMAGE_STORE)
-      }
-    }
-
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
+export async function loginAdmin(username, password) {
+  return requestJson('/api/admin/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
   })
 }
 
-function withImageStore(mode, action) {
-  return openImageDb().then(
-    (db) =>
-      new Promise((resolve, reject) => {
-        const tx = db.transaction(IMAGE_STORE, mode)
-        const store = tx.objectStore(IMAGE_STORE)
-        const request = action(store)
-
-        request.onsuccess = () => resolve(request.result)
-        request.onerror = () => reject(request.error)
-        tx.oncomplete = () => db.close()
-        tx.onerror = () => {
-          db.close()
-          reject(tx.error)
-        }
-      }),
-  )
+export async function setupAdmin(username, password) {
+  return requestJson('/api/admin/setup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  })
 }
 
-export function putImage(imageKey, file) {
-  return withImageStore('readwrite', (store) =>
-    store.put(
-      {
-        blob: file,
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        updatedAt: new Date().toISOString(),
-      },
-      imageKey,
-    ),
-  )
+export function listAdminCatalog(token) {
+  return requestJson('/api/admin/catalog', { headers: { Authorization: `Bearer ${token}` } })
 }
 
-export function getImage(imageKey) {
-  if (!imageKey) return Promise.resolve(null)
-  return withImageStore('readonly', (store) => store.get(imageKey))
+export function createProducts(products, token) {
+  return requestJson('/api/admin/products', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ products }),
+  })
 }
 
-export function deleteImage(imageKey) {
+export function updateProduct(id, patch, version, token) {
+  return requestJson(`/api/admin/products/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'If-Match': String(version) },
+    body: JSON.stringify({ ...patch, expectedVersion: version }),
+  })
+}
+
+export function updateProductStatus(id, status, version, token) {
+  return requestJson(`/api/admin/products/${encodeURIComponent(id)}/status`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'If-Match': String(version) },
+    body: JSON.stringify({ status, expectedVersion: version }),
+  })
+}
+
+export function softDeleteProduct(id, version, token) {
+  return requestJson(`/api/admin/products/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'If-Match': String(version) },
+    body: JSON.stringify({ expectedVersion: version }),
+  })
+}
+
+export function saveAdminSettings(settings, adminUsers, token) {
+  return requestJson('/api/admin/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      siteName: settings.siteName,
+      contactMethods: settings.contactMethods,
+      adminUsers,
+    }),
+  })
+}
+
+export function loadSettings() {
+  return defaultSettings
+}
+
+export async function putImage(imageKey, file, token) {
+  return requestJson(`/api/images/${encodeURIComponent(imageKey)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type || 'application/octet-stream', Authorization: `Bearer ${token}` },
+    body: file,
+  })
+}
+
+export function deleteImage(imageKey, token) {
   if (!imageKey) return Promise.resolve()
-  return withImageStore('readwrite', (store) => store.delete(imageKey))
-}
-
-export function clearImages() {
-  return withImageStore('readwrite', (store) => store.clear())
-}
-
-export function resetLocalData() {
-  localStorage.removeItem(PRODUCT_KEY)
+  return requestJson(`/api/images/${encodeURIComponent(imageKey)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
 }

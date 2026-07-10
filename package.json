@@ -7,8 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview",
-    "publish:backup": "node scripts/publish-backup.mjs"
+    "test": "node --test",
+    "smoke:api": "node scripts/smoke-api.mjs",
+    "admin": "node scripts/aov-admin.mjs",
+    "preview": "vite preview"
   },
   "dependencies": {
     "react": "^19.2.7",

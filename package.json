@@ -11,6 +11,9 @@
     "smoke:api": "node scripts/smoke-api.mjs",
     "admin": "node scripts/aov-admin.mjs",
     "library": "node scripts/aov-library.mjs",
+    "prices:setup": "python -m venv .venv-price && .venv-price\\Scripts\\python.exe -m pip install -r scripts/price-recognition/requirements.txt",
+    "prices:scan": "node scripts/scan-prices.mjs",
+    "prices:classify": "node scripts/classify-price-report.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

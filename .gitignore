@@ -8,6 +8,13 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+.venv-price/
+price-recognition-report.json
+price-recognition-*.json
+docs/price-recognition-samples.md
+__pycache__/
+*.pyc
+.price-sample-results.json
 dist
 dist-ssr
 *.local

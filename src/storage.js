@@ -246,3 +246,11 @@ export function deleteImage(imageKey, token) {
 export function clearAllProducts(token) {
   return requestJson('/api/admin/products/clear', { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
 }
+
+export function deleteProductsBatch(ids, token) {
+  return requestJson('/api/admin/products/batch', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ ids }),
+  })
+}

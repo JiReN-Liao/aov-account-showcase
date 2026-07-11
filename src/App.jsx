@@ -23,6 +23,7 @@ import {
   createUploadBatch,
   defaultSettings,
   deleteImage,
+  deleteProductsBatch,
   loadCloudCatalog,
   loadProducts,
   loadSettings,
@@ -48,6 +49,7 @@ const STATUSES = {
 const PUBLIC_STATUSES = ['available']
 const currency = new Intl.NumberFormat('zh-TW')
 const ADMIN_SESSION_KEY = 'aov-marketplace:admin-session:v1'
+const HOME_STATE_KEY = 'aov-marketplace:home-state:v1'
 const UPLOAD_CONCURRENCY = 4
 const UPLOAD_ITEM_CHUNK_SIZE = 20
 
@@ -251,10 +253,24 @@ function AdminAuthPage({ settings, setSettings, onLogin, target }) {
 }
 
 function HomePage({ products, settings }) {
-  const [query, setQuery] = useState('')
-  const [minPrice, setMinPrice] = useState('')
-  const [maxPrice, setMaxPrice] = useState('')
-  const [sort, setSort] = useState('default')
+  const initialState = useRef(readHomeState())
+  const restoredScroll = useRef(false)
+  const [query, setQuery] = useState(initialState.current.query)
+  const [minPrice, setMinPrice] = useState(initialState.current.minPrice)
+  const [maxPrice, setMaxPrice] = useState(initialState.current.maxPrice)
+  const [sort, setSort] = useState(initialState.current.sort)
+
+  useEffect(() => {
+    saveHomeState({ query, minPrice, maxPrice, sort })
+  }, [query, minPrice, maxPrice, sort])
+
+  useEffect(() => {
+    if (restoredScroll.current || !products.length) return
+    restoredScroll.current = true
+    requestAnimationFrame(() => window.scrollTo({ top: initialState.current.scrollY, behavior: 'auto' }))
+  }, [products.length])
+
+  const rememberCatalogPosition = (productId) => saveHomeState({ query, minPrice, maxPrice, sort, scrollY: window.scrollY, lastProductId: productId })
 
   const visibleProducts = useMemo(() => {
     const search = query.trim().toLowerCase()
@@ -307,7 +323,7 @@ function HomePage({ products, settings }) {
 
       {visibleProducts.length ? (
         <section className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 lg:grid-cols-5">
-          {visibleProducts.map((product) => <ProductCard key={product.id} product={product} settings={settings} />)}
+          {visibleProducts.map((product) => <ProductCard key={product.id} product={product} settings={settings} onOpen={rememberCatalogPosition} />)}
         </section>
       ) : (
         <EmptyState title="目前沒有符合條件的商品" text="可以調整搜尋、狀態或排序條件後再看看。" />
@@ -316,15 +332,15 @@ function HomePage({ products, settings }) {
   )
 }
 
-function ProductCard({ product, settings }) {
+function ProductCard({ product, settings, onOpen }) {
   return (
     <article className="overflow-hidden rounded border border-zinc-800 bg-zinc-950 shadow-[0_3px_9px_rgba(0,0,0,0.16)]">
-      <a href={`#/product/${product.id}`} className="relative block aspect-[4/5] bg-black p-1.5">
+      <a href={`#/product/${product.id}`} onClick={() => onOpen(product.id)} className="relative block aspect-[4/5] bg-black p-1.5">
         <StoredImage imageKey={product.imageKey} imageUrl={product.imageUrl} alt={product.code} className="h-full w-full object-contain" />
       </a>
       <div className="space-y-2 p-2.5">
         <div className="flex items-center justify-between gap-2">
-          <a href={`#/product/${product.id}`} className="truncate text-xs font-black text-zinc-100">{product.code}</a>
+          <a href={`#/product/${product.id}`} onClick={() => onOpen(product.id)} className="truncate text-xs font-black text-zinc-100">{product.code}</a>
           <StatusChip status={product.status} />
         </div>
         {product.title && <p className="line-clamp-1 text-xs text-zinc-500">{product.title}</p>}
@@ -338,19 +354,23 @@ function ProductCard({ product, settings }) {
 function DetailPage({ products, settings, productId }) {
   const [previewOpen, setPreviewOpen] = useState(false)
   const product = products.find((item) => item.id === productId)
+  const returnToCatalog = () => {
+    if (readHomeState().lastProductId === productId) window.history.back()
+    else window.location.hash = '#/'
+  }
 
   if (!product || !PUBLIC_STATUSES.includes(product.status)) {
     return (
       <main className="mx-auto max-w-4xl px-3 py-6 sm:px-5">
         <EmptyState title="找不到公開商品" text="這筆商品可能還是草稿、已隱藏，或已被刪除。" />
-        <a href="#/" className="mt-4 inline-flex items-center gap-2 rounded bg-zinc-100 px-4 py-2 font-bold text-zinc-950"><ArrowLeft size={16} />返回商品列表</a>
+        <button type="button" onClick={returnToCatalog} className="mt-4 inline-flex items-center gap-2 rounded bg-zinc-100 px-4 py-2 font-bold text-zinc-950"><ArrowLeft size={16} />返回商品列表</button>
       </main>
     )
   }
 
   return (
     <main className="mx-auto max-w-[1400px] px-3 py-4 sm:px-5">
-      <a href="#/" className="mb-4 inline-flex items-center gap-2 rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition hover:border-zinc-400 hover:text-white"><ArrowLeft size={16} />商品列表</a>
+      <button type="button" onClick={returnToCatalog} className="mb-4 inline-flex items-center gap-2 rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition hover:border-zinc-400 hover:text-white"><ArrowLeft size={16} />商品列表</button>
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <button type="button" onClick={() => setPreviewOpen(true)} className="min-h-[56vh] overflow-hidden rounded border border-zinc-800 bg-black p-2" title="查看完整圖片" aria-label={`查看 ${product.code} 的完整圖片`}>
           <StoredImage imageKey={product.imageKey} imageUrl={product.imageUrl} alt={product.code} className="h-full max-h-[78vh] w-full object-contain" />
@@ -387,6 +407,8 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
   const [isClearing, setIsClearing] = useState(false)
   const [isRecognizing, setIsRecognizing] = useState(false)
   const [recognizingProductId, setRecognizingProductId] = useState('')
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [isDeletingSelected, setIsDeletingSelected] = useState(false)
   const queues = useRef(new Map())
   const versions = useRef(new Map())
   const uploadControllers = useRef(new Map())
@@ -705,6 +727,34 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
     }
   }
 
+  const deleteSelected = async () => {
+    const ids = [...selectedIds]
+    if (!ids.length || isDeletingSelected) return
+    if (!confirm(`確定刪除已選取的 ${ids.length} 筆商品與圖片？此操作無法復原。`)) return
+    setIsDeletingSelected(true)
+    setMessage(`正在刪除 ${ids.length} 筆已選商品…`)
+    try {
+      const result = await deleteProductsBatch(ids, adminToken)
+      const deleted = new Set(ids)
+      setProducts((current) => current.filter((product) => !deleted.has(product.id)))
+      setSelectedIds(new Set())
+      setMessage(`已批量刪除 ${result.deleted} 筆商品；圖片正在背景清理。`)
+    } catch (caught) {
+      setMessage(caught.message || '批量刪除失敗，請重新整理後再試。')
+    } finally {
+      setIsDeletingSelected(false)
+    }
+  }
+
+  const toggleSelected = (id) => setSelectedIds((current) => {
+    const next = new Set(current)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
+
+  const toggleAll = () => setSelectedIds((current) => current.size === products.length ? new Set() : new Set(products.map((product) => product.id)))
+
   return (
     <main className="mx-auto max-w-[1600px] px-3 py-4 sm:px-5">
       <section className="sticky top-[57px] z-20 -mx-3 mb-5 border-y border-zinc-800 bg-black/95 px-3 py-3 sm:-mx-5 sm:px-5">
@@ -725,6 +775,9 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
             {isRecognizing ? <LoaderCircle size={16} className="animate-spin" /> : <RotateCcw size={16} />}重新識別未上架價格
           </button>
           <a href="#/settings" className="inline-flex h-9 items-center gap-2 rounded border border-zinc-700 px-3 text-sm font-bold text-zinc-200"><Settings2 size={16} />設定</a>
+          <button type="button" onClick={deleteSelected} disabled={!selectedIds.size || isDeletingSelected} className="inline-flex h-9 items-center gap-2 rounded border border-zinc-700 px-3 text-sm font-bold text-zinc-200 disabled:opacity-40">
+            {isDeletingSelected ? <LoaderCircle size={16} className="animate-spin" /> : <Trash2 size={16} />}刪除已選{selectedIds.size ? ` (${selectedIds.size})` : ''}
+          </button>
           <IconButton label={isClearing ? '正在清空全部資料' : '清空全部測試資料'} onClick={clearAll} disabled={isClearing} className="border border-zinc-700 text-zinc-400 hover:border-zinc-400 hover:text-white">
             {isClearing ? <LoaderCircle size={16} className="animate-spin" /> : <Trash2 size={16} />}
           </IconButton>
@@ -757,6 +810,7 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
           <table className="w-full min-w-[980px] text-left text-sm">
             <thead className="bg-zinc-900 text-xs uppercase text-zinc-400">
               <tr>
+                <th className="w-10 px-3 py-3"><input type="checkbox" aria-label="選取全部商品" checked={products.length > 0 && selectedIds.size === products.length} onChange={toggleAll} /></th>
                 <th className="px-3 py-3">圖片</th>
                 <th className="px-3 py-3">編號</th>
                 <th className="px-3 py-3">標題</th>
@@ -769,7 +823,7 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
             </thead>
             <tbody className="divide-y divide-zinc-800">
               {products.slice().sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).map((product) => (
-                <AdminRow key={product.id} product={product} updateProduct={updateProduct} removeProduct={removeProduct} openPreview={setPreviewProduct} recognizePrice={recognizeOneProduct} recognizing={recognizingProductId === product.id} recognitionDisabled={isRecognizing || Boolean(recognizingProductId)} />
+                <AdminRow key={product.id} product={product} selected={selectedIds.has(product.id)} toggleSelected={toggleSelected} updateProduct={updateProduct} removeProduct={removeProduct} openPreview={setPreviewProduct} recognizePrice={recognizeOneProduct} recognizing={recognizingProductId === product.id} recognitionDisabled={isRecognizing || Boolean(recognizingProductId)} />
               ))}
             </tbody>
           </table>
@@ -789,9 +843,10 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
   )
 }
 
-function AdminRow({ product, updateProduct, removeProduct, openPreview, recognizePrice, recognizing, recognitionDisabled }) {
+function AdminRow({ product, selected, toggleSelected, updateProduct, removeProduct, openPreview, recognizePrice, recognizing, recognitionDisabled }) {
   return (
     <tr className="align-top">
+      <td className="px-3 py-3"><input type="checkbox" aria-label={`選取 ${product.code}`} checked={selected} onChange={() => toggleSelected(product.id)} /></td>
       <td className="px-3 py-3">
         <button
           type="button"
@@ -1208,6 +1263,19 @@ function buildContactUrl(url, code) {
 function formatPrice(price) {
   const value = Number(price || 0)
   return value > 0 ? `NT$${currency.format(value)}` : ''
+}
+
+function readHomeState() {
+  const fallback = { query: '', minPrice: '', maxPrice: '', sort: 'default', scrollY: 0, lastProductId: '' }
+  try {
+    return { ...fallback, ...JSON.parse(sessionStorage.getItem(HOME_STATE_KEY) || '{}') }
+  } catch {
+    return fallback
+  }
+}
+
+function saveHomeState(patch) {
+  sessionStorage.setItem(HOME_STATE_KEY, JSON.stringify({ ...readHomeState(), ...patch }))
 }
 
 function EmptyState({ title, text }) {

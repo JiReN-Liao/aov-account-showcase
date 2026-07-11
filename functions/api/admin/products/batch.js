@@ -46,3 +46,30 @@ export async function onRequestPatch({ request, env }) {
   await writeAudit(env, { actorId: auth.id, action: 'products.batch_update', entityType: 'product_batch', metadata: { count: operations.length } })
   return json({ ok: true, operations: operations.length })
 }
+
+export async function onRequestDelete({ request, env, waitUntil }) {
+  const auth = await requireAdmin(request, env)
+  if (auth instanceof Response) return auth
+  const body = await readJson(request)
+  const ids = [...new Set((Array.isArray(body.ids) ? body.ids : []).map((id) => String(id || '')).filter(Boolean))]
+  if (!ids.length || ids.length > 100) return errorResponse('Provide 1 to 100 product ids.', 400, 'INVALID_BATCH')
+
+  const placeholders = ids.map((_, index) => `?${index + 1}`).join(',')
+  const active = (await env.DB.prepare(`SELECT id, image_key FROM products WHERE id IN (${placeholders}) AND deleted_at IS NULL`).bind(...ids).all()).results || []
+  if (!active.length) return json({ ok: true, deleted: 0, imagesQueued: 0 })
+  const activeIds = active.map((row) => row.id)
+  const imageKeys = [...new Set(active.map((row) => row.image_key).filter(Boolean))]
+  const activePlaceholders = activeIds.map((_, index) => `?${index + 2}`).join(',')
+  const now = new Date().toISOString()
+
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE image_objects SET deleted_at = ?1 WHERE key IN (SELECT image_key FROM products WHERE id IN (${activePlaceholders})) AND deleted_at IS NULL`).bind(now, ...activeIds),
+    env.DB.prepare(`UPDATE products SET deleted_at = ?1, status = 'hidden', updated_at = ?1, version = version + 1 WHERE id IN (${activePlaceholders}) AND deleted_at IS NULL`).bind(now, ...activeIds),
+  ])
+  await writeAudit(env, { actorId: auth.id, action: 'products.batch_delete', entityType: 'product_batch', entityId: 'selected', metadata: { count: active.length, images: imageKeys.length } })
+
+  const cleanup = Promise.allSettled(imageKeys.map((key) => env.AOV_STORE.delete(`image:${key}`)))
+  if (typeof waitUntil === 'function') waitUntil(cleanup)
+  else await cleanup
+  return json({ ok: true, deleted: active.length, imagesQueued: imageKeys.length })
+}

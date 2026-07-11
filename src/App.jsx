@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { siFacebook, siInstagram, siLine } from 'simple-icons'
 import {
   ArrowLeft,
   ArrowUpDown,
@@ -39,6 +40,7 @@ import {
   updateProduct as updateProductApi,
   updateProductStatus,
 } from './storage'
+import brandLogo from './assets/jiren-logo.webp'
 
 const STATUSES = {
   draft: { label: '草稿', chip: 'border-zinc-700 bg-zinc-900 text-zinc-300' },
@@ -145,8 +147,9 @@ function Header({ settings, isAdmin, onLogout }) {
   return (
     <header className="sticky top-0 z-30 border-b border-zinc-800 bg-black/95">
       <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3 px-3 py-3 sm:px-5">
-        <a href="#/" className="min-w-0 truncate text-sm font-black text-white sm:text-base">
-          {settings.siteName || defaultSettings.siteName}
+        <a href="#/" className="flex min-w-0 items-center gap-2.5" aria-label={settings.siteName || defaultSettings.siteName}>
+          <img src={brandLogo} alt="J1ReN 的小舖" className="h-9 w-9 shrink-0 rounded-sm object-cover invert" />
+          <span className="truncate text-sm font-black text-white sm:text-base">{settings.siteName || defaultSettings.siteName}</span>
         </a>
         <nav className="flex shrink-0 items-center gap-1 text-sm">
           <NavLink href="#/">商品牆</NavLink>
@@ -328,8 +331,45 @@ function HomePage({ products, settings }) {
       ) : (
         <EmptyState title="目前沒有符合條件的商品" text="可以調整搜尋、狀態或排序條件後再看看。" />
       )}
+      <StoreFooter settings={settings} />
     </main>
   )
+}
+
+function StoreFooter({ settings }) {
+  const methods = getContactMethods(settings)
+  return (
+    <footer className="mt-10 border-t border-zinc-800 py-8 sm:mt-14 sm:py-10">
+      <div className="flex flex-col items-center justify-between gap-6 sm:flex-row">
+        <img src={brandLogo} alt="J1ReN 的小舖" className="h-32 w-32 shrink-0 rounded object-cover invert sm:h-36 sm:w-36" />
+        <div className="flex items-center gap-2">
+          {methods.map((method) => {
+            const brand = contactBrand(method)
+            return method.url ? (
+              <a key={method.id} href={method.url} target="_blank" rel="noreferrer" title={brand.label} aria-label={brand.label} className="inline-flex h-12 w-12 items-center justify-center rounded border border-zinc-700 text-zinc-200 transition hover:border-zinc-300 hover:bg-zinc-100 hover:text-zinc-950">
+                <BrandIcon icon={brand.icon} />
+              </a>
+            ) : (
+              <span key={method.id} title={`${brand.label} 尚未設定`} aria-label={`${brand.label} 尚未設定`} className="inline-flex h-12 w-12 items-center justify-center rounded border border-zinc-800 text-zinc-700">
+                <BrandIcon icon={brand.icon} />
+              </span>
+            )
+          })}
+        </div>
+      </div>
+    </footer>
+  )
+}
+
+function BrandIcon({ icon }) {
+  return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-current"><path d={icon.path} /></svg>
+}
+
+function contactBrand(method) {
+  const name = `${method.id || ''} ${method.label || ''}`.toLowerCase()
+  if (name.includes('instagram') || /(^|\s)ig($|\s)/.test(name)) return { label: 'Instagram', icon: siInstagram }
+  if (name.includes('facebook') || /(^|\s)fb($|\s)/.test(name)) return { label: 'Facebook', icon: siFacebook }
+  return { label: 'LINE', icon: siLine }
 }
 
 function ProductCard({ product, settings, onOpen }) {

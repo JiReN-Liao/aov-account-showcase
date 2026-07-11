@@ -13,7 +13,6 @@ import {
   RotateCcw,
   Search,
   Settings2,
-  SlidersHorizontal,
   Trash2,
   Upload,
   X,
@@ -303,8 +302,8 @@ function HomePage({ products, settings }) {
             <input className="h-10 w-full rounded border border-zinc-700 bg-zinc-950 pl-10 pr-3 text-sm text-white placeholder:text-zinc-500" placeholder="搜尋編號、標題或備註" value={query} onChange={(event) => setQuery(event.target.value)} />
           </label>
           <label className="relative block">
-            <SlidersHorizontal className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={15} />
-            <input aria-label="最低價格" inputMode="numeric" className="h-10 w-full rounded border border-zinc-700 bg-zinc-950 pl-9 pr-3 text-sm" placeholder="最低價格" value={minPrice} onChange={(event) => setMinPrice(event.target.value.replace(/[^\d]/g, ''))} />
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-500">NT$</span>
+            <input aria-label="最低價格" inputMode="numeric" className="h-10 w-full rounded border border-zinc-700 bg-zinc-950 pl-10 pr-3 text-sm" placeholder="最低價格" value={minPrice} onChange={(event) => setMinPrice(event.target.value.replace(/[^\d]/g, ''))} />
           </label>
           <label className="relative block">
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-500">NT$</span>

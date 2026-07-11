@@ -1,7 +1,7 @@
 import { requireAdmin } from '../../../_lib/auth.js'
 import { errorResponse, json, readJson } from '../../../_lib/http.js'
 import { getAdminProducts, mapProduct, normalizeProductInput } from '../../../_lib/products.js'
-import { ensureReadyImage, isPublicStatus } from '../../../_lib/uploads.js'
+import { ensurePublishableProduct, isPublicStatus } from '../../../_lib/uploads.js'
 
 export async function onRequestGet({ request, env }) {
   const auth = await requireAdmin(request, env)
@@ -20,7 +20,7 @@ export async function onRequestPost({ request, env }) {
   try {
     products = inputs.map((input) => normalizeProductInput(input))
     for (const product of products) {
-      if (isPublicStatus(product.status)) await ensureReadyImage(env, product.imageKey)
+      if (isPublicStatus(product.status)) await ensurePublishableProduct(env, product)
     }
   } catch (error) {
     return errorResponse(error.message, 400, 'INVALID_PRODUCT')

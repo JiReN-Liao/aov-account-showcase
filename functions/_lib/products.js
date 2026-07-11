@@ -1,4 +1,4 @@
-export const PUBLIC_STATUSES = ['available', 'reserved', 'sold']
+export const PUBLIC_STATUSES = ['available']
 export const ALL_STATUSES = ['draft', 'available', 'reserved', 'sold', 'hidden']
 
 export const PUBLIC_SETTINGS = {
@@ -62,7 +62,7 @@ export async function getAdminProducts(env) {
 
 export async function getPublicProducts(env) {
   const result = await env.DB.prepare(
-    "SELECT id, code, title, description, price, status, image_key, sort_order, created_at, updated_at, version FROM products WHERE deleted_at IS NULL AND status IN ('available', 'reserved', 'sold') ORDER BY sort_order ASC, code ASC",
+    "SELECT id, code, title, description, price, status, image_key, sort_order, created_at, updated_at, version FROM products WHERE deleted_at IS NULL AND status = 'available' ORDER BY sort_order ASC, code ASC",
   ).all()
   return (result.results || []).map((row) => mapProduct(row, true))
 }

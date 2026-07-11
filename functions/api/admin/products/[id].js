@@ -2,7 +2,7 @@ import { requireAdmin } from '../../../_lib/auth.js'
 import { writeAudit } from '../../../_lib/audit.js'
 import { errorResponse, json, readJson } from '../../../_lib/http.js'
 import { expectedVersion, mapProduct, normalizeProductInput } from '../../../_lib/products.js'
-import { ensureReadyImage, isPublicStatus, productInputFromRow } from '../../../_lib/uploads.js'
+import { ensurePublishableProduct, isPublicStatus, productInputFromRow } from '../../../_lib/uploads.js'
 
 export async function onRequestPatch({ request, params, env }) {
   const auth = await requireAdmin(request, env)
@@ -23,7 +23,7 @@ export async function onRequestPatch({ request, params, env }) {
     return errorResponse(error.message, 400, 'INVALID_PRODUCT')
   }
   try {
-    if (isPublicStatus(normalized.status)) await ensureReadyImage(env, normalized.imageKey)
+    if (isPublicStatus(normalized.status)) await ensurePublishableProduct(env, normalized)
   } catch (error) {
     return errorResponse(error.message, 409, 'IMAGE_NOT_READY')
   }

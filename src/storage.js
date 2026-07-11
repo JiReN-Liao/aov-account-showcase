@@ -85,6 +85,13 @@ export function cancelUploadBatch(batchId, token) {
   })
 }
 
+export function recognizeImagePrice(imageKey, token) {
+  return requestJson(`/api/admin/images/${encodeURIComponent(imageKey)}/recognize-price`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+}
+
 export function updateProduct(id, patch, version, token) {
   return requestJson(`/api/admin/products/${encodeURIComponent(id)}`, {
     method: 'PATCH',

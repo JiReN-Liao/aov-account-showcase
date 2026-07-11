@@ -21,6 +21,13 @@ export async function ensureReadyImage(env, imageKey) {
   if (!image) throw new Error('The product image is not ready for publishing.')
 }
 
+export async function ensurePublishableProduct(env, product) {
+  if (product.price == null || product.price === '' || !Number.isInteger(Number(product.price)) || Number(product.price) <= 0) {
+    throw new Error('A recognized or manually entered price is required before publishing.')
+  }
+  await ensureReadyImage(env, product.imageKey)
+}
+
 export function mapBatch(row, items = [], counts = {}) {
   return {
     id: row.id,

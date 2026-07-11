@@ -29,6 +29,7 @@ import {
   listAdminCatalog,
   loginAdmin,
   putImage,
+  recognizeImagePrice,
   registerUploadItems,
   saveAdminSettings,
   softDeleteProduct,
@@ -40,12 +41,10 @@ import {
 const STATUSES = {
   draft: { label: '草稿', chip: 'border-zinc-700 bg-zinc-900 text-zinc-300' },
   available: { label: '出售中', chip: 'border-zinc-300 bg-zinc-100 text-zinc-950' },
-  reserved: { label: '洽談中', chip: 'border-zinc-600 bg-zinc-800 text-zinc-100' },
-  sold: { label: '已售出', chip: 'border-zinc-700 bg-zinc-800 text-zinc-400' },
   hidden: { label: '隱藏', chip: 'border-zinc-800 bg-zinc-950 text-zinc-500' },
 }
 
-const PUBLIC_STATUSES = ['available', 'reserved', 'sold']
+const PUBLIC_STATUSES = ['available']
 const currency = new Intl.NumberFormat('zh-TW')
 const ADMIN_SESSION_KEY = 'aov-marketplace:admin-session:v1'
 const UPLOAD_CONCURRENCY = 4
@@ -252,7 +251,7 @@ function AdminAuthPage({ settings, setSettings, onLogin, target }) {
 
 function HomePage({ products, settings }) {
   const [query, setQuery] = useState('')
-  const [status, setStatus] = useState('all')
+  const [priceRange, setPriceRange] = useState('all')
   const [sort, setSort] = useState('default')
 
   const visibleProducts = useMemo(() => {
@@ -261,16 +260,22 @@ function HomePage({ products, settings }) {
       .filter((product) => PUBLIC_STATUSES.includes(product.status))
       .filter((product) => {
         const target = [product.code, product.title, product.description].join(' ').toLowerCase()
-        return (!search || target.includes(search)) && (status === 'all' || product.status === status)
+        const price = Number(product.price)
+        const matchesPrice = priceRange === 'all'
+          || (priceRange === 'under3000' && price > 0 && price < 3000)
+          || (priceRange === '3000to9999' && price >= 3000 && price < 10000)
+          || (priceRange === '10000to49999' && price >= 10000 && price < 50000)
+          || (priceRange === '50000plus' && price >= 50000)
+        return (!search || target.includes(search)) && matchesPrice
       })
 
     return filtered.sort((a, b) => {
-      if (sort === 'priceAsc') return Number(a.price || 0) - Number(b.price || 0)
+      if (sort === 'priceAsc') return (Number(a.price) || Number.MAX_SAFE_INTEGER) - (Number(b.price) || Number.MAX_SAFE_INTEGER)
       if (sort === 'priceDesc') return Number(b.price || 0) - Number(a.price || 0)
       if (sort === 'newest') return new Date(b.createdAt) - new Date(a.createdAt)
       return Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || a.code.localeCompare(b.code)
     })
-  }, [products, query, status, sort])
+  }, [products, query, priceRange, sort])
 
   return (
     <main className="mx-auto max-w-[1600px] px-3 py-3 sm:px-5 sm:py-5">
@@ -282,11 +287,12 @@ function HomePage({ products, settings }) {
           </label>
           <label className="relative block">
             <SlidersHorizontal className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={15} />
-            <select aria-label="篩選商品狀態" className="h-10 w-full appearance-none rounded border border-zinc-700 bg-zinc-950 pl-9 pr-8 text-sm" value={status} onChange={(event) => setStatus(event.target.value)}>
-            <option value="all">全部狀態</option>
-            <option value="available">出售中</option>
-            <option value="reserved">洽談中</option>
-            <option value="sold">已售出</option>
+            <select aria-label="選擇價格範圍" className="h-10 w-full appearance-none rounded border border-zinc-700 bg-zinc-950 pl-9 pr-8 text-sm" value={priceRange} onChange={(event) => setPriceRange(event.target.value)}>
+            <option value="all">全部價格</option>
+            <option value="under3000">NT$3,000 以下</option>
+            <option value="3000to9999">NT$3,000～9,999</option>
+            <option value="10000to49999">NT$10,000～49,999</option>
+            <option value="50000plus">NT$50,000 以上</option>
             </select>
             <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500" size={15} />
           </label>
@@ -316,12 +322,10 @@ function HomePage({ products, settings }) {
 }
 
 function ProductCard({ product, settings }) {
-  const isSold = product.status === 'sold'
   return (
-    <article className={`overflow-hidden rounded border border-zinc-800 bg-zinc-950 shadow-[0_3px_9px_rgba(0,0,0,0.16)] ${isSold ? 'opacity-70' : ''}`}>
+    <article className="overflow-hidden rounded border border-zinc-800 bg-zinc-950 shadow-[0_3px_9px_rgba(0,0,0,0.16)]">
       <a href={`#/product/${product.id}`} className="relative block aspect-[4/5] bg-black p-1.5">
-        <StoredImage imageKey={product.imageKey} imageUrl={product.imageUrl} alt={product.code} className={`h-full w-full object-contain ${isSold ? 'grayscale' : ''}`} />
-        {isSold && <div className="absolute inset-0 grid place-items-center bg-black/65 text-sm font-black text-zinc-100">已售出</div>}
+        <StoredImage imageKey={product.imageKey} imageUrl={product.imageUrl} alt={product.code} className="h-full w-full object-contain" />
       </a>
       <div className="space-y-2 p-2.5">
         <div className="flex items-center justify-between gap-2">
@@ -437,7 +441,21 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
             signal: controller.signal,
             onProgress: (loaded, total) => patchUpload(job.clientItemId, { loaded, total }),
           })
-          patchUpload(job.clientItemId, { status: 'ready', loaded: job.file.size, total: job.file.size })
+          patchUpload(job.clientItemId, { status: 'recognizing', loaded: job.file.size, total: job.file.size })
+          try {
+            const recognition = await recognizeImagePrice(job.imageKey, adminToken)
+            if (recognition.product) {
+              versions.current.set(recognition.product.id, recognition.product.version || 1)
+              setProducts((current) => current.map((product) => (product.id === recognition.product.id ? recognition.product : product)))
+            }
+            patchUpload(job.clientItemId, {
+              status: 'ready',
+              recognizedPrice: recognition.price,
+              error: recognition.recognized ? '' : '未辨識到數字價格，請手動確認。',
+            })
+          } catch (recognitionError) {
+            patchUpload(job.clientItemId, { status: 'ready', error: recognitionError.message || '價格辨識失敗，請手動確認。' })
+          }
         } catch (caught) {
           const cancelled = caught?.name === 'AbortError' || cancelledUploadBatches.current.has(batchId)
           patchUpload(job.clientItemId, {
@@ -509,9 +527,10 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
         registeredItems.forEach((item) => patchUpload(item.clientItemId, {
           status: item.imageStatus === 'ready' ? 'ready' : 'queued',
           registered: true,
+          product: item.product,
           error: item.error || '',
         }))
-        registered.push(...chunk.filter((job) => registeredItems.some((item) => item.clientItemId === job.clientItemId && item.imageStatus !== 'ready')))
+        registered.push(...registeredItems.filter((item) => item.imageStatus !== 'ready').map((item) => ({ ...chunk.find((job) => job.clientItemId === item.clientItemId), product: item.product })))
       } catch (caught) {
         chunk.forEach((job) => patchUpload(job.clientItemId, { status: 'failed', registered: false, error: caught.message || '無法建立這張圖片的商品草稿。' }))
       }
@@ -565,7 +584,7 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
           }
           const ready = item.imageStatus === 'ready'
           patchUpload(job.clientItemId, { status: ready ? 'ready' : 'queued', registered: true, error: item.error || '', loaded: ready ? job.file.size : 0 })
-          if (!ready) uploadJobs.push({ ...job, registered: true })
+          if (!ready) uploadJobs.push({ ...job, registered: true, product: item.product })
         })
       } catch (caught) {
         chunk.forEach((job) => patchUpload(job.clientItemId, { status: 'failed', registered: false, error: caught.message || '無法建立這張圖片的商品草稿。' }))
@@ -692,7 +711,7 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
           </div>
           <progress className="mt-3 h-1.5 w-full accent-zinc-100" value={uploads.reduce((sum, upload) => sum + Math.min(upload.loaded || 0, upload.total || 0), 0)} max={uploads.reduce((sum, upload) => sum + (upload.total || 0), 0) || 1} />
           <ul className="mt-3 max-h-48 divide-y divide-zinc-900 overflow-y-auto text-xs">
-            {uploads.map((upload) => <li key={upload.clientItemId} className="grid grid-cols-[5.5rem_minmax(0,1fr)_auto] gap-2 py-2"><span className="font-bold text-zinc-500">{uploadStatusLabel(upload.status)}</span><span className="min-w-0 truncate text-zinc-300">{upload.name}</span>{upload.error ? <span className="max-w-56 truncate text-zinc-500" title={upload.error}>{upload.error}</span> : <span className="tabular-nums text-zinc-600">{upload.total ? `${Math.round(((upload.loaded || 0) / upload.total) * 100)}%` : ''}</span>}</li>)}
+            {uploads.map((upload) => <li key={upload.clientItemId} className="grid grid-cols-[5.5rem_minmax(0,1fr)_auto] gap-2 py-2"><span className="font-bold text-zinc-500">{uploadStatusLabel(upload.status)}</span><span className="min-w-0 truncate text-zinc-300">{upload.name}</span>{upload.error ? <span className="max-w-56 truncate text-zinc-500" title={upload.error}>{upload.error}</span> : upload.recognizedPrice ? <span className="font-bold tabular-nums text-zinc-200">{formatPrice(upload.recognizedPrice)}</span> : <span className="tabular-nums text-zinc-600">{upload.total ? `${Math.round(((upload.loaded || 0) / upload.total) * 100)}%` : ''}</span>}</li>)}
           </ul>
         </section>
       )}
@@ -752,15 +771,16 @@ function AdminRow({ product, updateProduct, removeProduct, openPreview }) {
       <td className="px-3 py-3"><input className="w-36 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-2" value={product.title} onChange={(event) => updateProduct(product.id, { title: event.target.value })} /></td>
       <td className="px-3 py-3"><input className="w-28 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-2" inputMode="numeric" value={product.price} onChange={(event) => updateProduct(product.id, { price: event.target.value.replace(/[^\d]/g, '') })} /></td>
       <td className="px-3 py-3">
-        <select className="w-28 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-2" value={product.status} onChange={(event) => updateProduct(product.id, { status: event.target.value })}>
+        <select className="w-28 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-2" value={product.status} onChange={(event) => event.target.value === 'delete' ? removeProduct(product) : updateProduct(product.id, { status: event.target.value })}>
           {Object.entries(STATUSES).map(([value, meta]) => <option key={value} value={value}>{meta.label}</option>)}
+          <option value="delete">刪除</option>
         </select>
       </td>
       <td className="px-3 py-3"><textarea className="h-24 w-52 resize-none rounded-md border border-zinc-700 bg-zinc-900 px-2 py-2" value={product.note} onChange={(event) => updateProduct(product.id, { note: event.target.value })} /></td>
       <td className="px-3 py-3"><input className="w-20 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-2" inputMode="numeric" value={product.sortOrder} onChange={(event) => updateProduct(product.id, { sortOrder: event.target.value.replace(/[^\d]/g, '') })} /></td>
       <td className="space-y-2 px-3 py-3">
         <div className="flex flex-wrap gap-1">
-          {['available', 'reserved', 'sold', 'hidden'].map((status) => <QuickStatus key={status} product={product} updateProduct={updateProduct} status={status} />)}
+          {['available', 'hidden'].map((status) => <QuickStatus key={status} product={product} updateProduct={updateProduct} status={status} />)}
         </div>
         <div className="flex items-center gap-1">
           {PUBLIC_STATUSES.includes(product.status) && <a className="inline-flex h-7 w-7 items-center justify-center rounded border border-zinc-700 text-zinc-300" href={`#/product/${product.id}`} title="查看商品" aria-label={`查看 ${product.code}`}><ExternalLink size={14} /></a>}
@@ -1014,8 +1034,8 @@ function StatusChip({ status }) {
 function ContactButton({ product, settings, compact = false }) {
   const [open, setOpen] = useState(false)
   const methods = getContactMethods(settings)
-  const disabled = !methods.some((method) => method.url) || product.status === 'sold'
-  const label = product.status === 'sold' ? '已售出' : '聯絡購買'
+  const disabled = !methods.some((method) => method.url)
+  const label = '聯絡購買'
 
   if (disabled) return <button type="button" disabled className={`${compact ? 'h-8 text-xs' : 'h-10 text-sm'} w-full rounded border border-zinc-800 bg-zinc-900 font-black text-zinc-600`}>{label}</button>
   return (
@@ -1103,6 +1123,7 @@ function uploadStatusLabel(status) {
     registering: '建立草稿中',
     queued: '等待上傳',
     uploading: '上傳中',
+    recognizing: '辨識價格',
     ready: '已完成',
     failed: '上傳失敗',
     cancelled: '已取消',

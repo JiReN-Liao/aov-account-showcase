@@ -12,6 +12,7 @@ node_modules
 price-recognition-report.json
 price-recognition-*.json
 price-fingerprints.*
+price-fingerprints*.sql
 docs/price-recognition-samples.md
 __pycache__/
 *.pyc

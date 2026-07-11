@@ -30,6 +30,7 @@ import {
   loginAdmin,
   putImage,
   recognizeImagePrice,
+  recognizeUnpublishedPrices,
   registerUploadItems,
   saveAdminSettings,
   softDeleteProduct,
@@ -251,7 +252,8 @@ function AdminAuthPage({ settings, setSettings, onLogin, target }) {
 
 function HomePage({ products, settings }) {
   const [query, setQuery] = useState('')
-  const [priceRange, setPriceRange] = useState('all')
+  const [minPrice, setMinPrice] = useState('')
+  const [maxPrice, setMaxPrice] = useState('')
   const [sort, setSort] = useState('default')
 
   const visibleProducts = useMemo(() => {
@@ -261,11 +263,7 @@ function HomePage({ products, settings }) {
       .filter((product) => {
         const target = [product.code, product.title, product.description].join(' ').toLowerCase()
         const price = Number(product.price)
-        const matchesPrice = priceRange === 'all'
-          || (priceRange === 'under3000' && price > 0 && price < 3000)
-          || (priceRange === '3000to9999' && price >= 3000 && price < 10000)
-          || (priceRange === '10000to49999' && price >= 10000 && price < 50000)
-          || (priceRange === '50000plus' && price >= 50000)
+        const matchesPrice = (!minPrice || price >= Number(minPrice)) && (!maxPrice || price <= Number(maxPrice))
         return (!search || target.includes(search)) && matchesPrice
       })
 
@@ -275,26 +273,23 @@ function HomePage({ products, settings }) {
       if (sort === 'newest') return new Date(b.createdAt) - new Date(a.createdAt)
       return Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || a.code.localeCompare(b.code)
     })
-  }, [products, query, priceRange, sort])
+  }, [products, query, minPrice, maxPrice, sort])
 
   return (
     <main className="mx-auto max-w-[1600px] px-3 py-3 sm:px-5 sm:py-5">
       <section className="mb-4 border-y border-zinc-800 py-3">
-        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_10rem_10rem]">
+        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_9rem_9rem_10rem]">
           <label className="relative block">
             <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={17} />
             <input className="h-10 w-full rounded border border-zinc-700 bg-zinc-950 pl-10 pr-3 text-sm text-white placeholder:text-zinc-500" placeholder="搜尋編號、標題或備註" value={query} onChange={(event) => setQuery(event.target.value)} />
           </label>
           <label className="relative block">
             <SlidersHorizontal className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={15} />
-            <select aria-label="選擇價格範圍" className="h-10 w-full appearance-none rounded border border-zinc-700 bg-zinc-950 pl-9 pr-8 text-sm" value={priceRange} onChange={(event) => setPriceRange(event.target.value)}>
-            <option value="all">全部價格</option>
-            <option value="under3000">NT$3,000 以下</option>
-            <option value="3000to9999">NT$3,000～9,999</option>
-            <option value="10000to49999">NT$10,000～49,999</option>
-            <option value="50000plus">NT$50,000 以上</option>
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500" size={15} />
+            <input aria-label="最低價格" inputMode="numeric" className="h-10 w-full rounded border border-zinc-700 bg-zinc-950 pl-9 pr-3 text-sm" placeholder="最低價格" value={minPrice} onChange={(event) => setMinPrice(event.target.value.replace(/[^\d]/g, ''))} />
+          </label>
+          <label className="relative block">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-500">NT$</span>
+            <input aria-label="最高價格" inputMode="numeric" className="h-10 w-full rounded border border-zinc-700 bg-zinc-950 pl-10 pr-3 text-sm" placeholder="最高價格" value={maxPrice} onChange={(event) => setMaxPrice(event.target.value.replace(/[^\d]/g, ''))} />
           </label>
           <label className="relative block">
             <ArrowUpDown className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={15} />
@@ -390,6 +385,8 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
   const [uploads, setUploads] = useState([])
   const [activeUploadBatch, setActiveUploadBatch] = useState('')
   const [isClearing, setIsClearing] = useState(false)
+  const [isRecognizing, setIsRecognizing] = useState(false)
+  const [recognizingProductId, setRecognizingProductId] = useState('')
   const queues = useRef(new Map())
   const versions = useRef(new Map())
   const uploadControllers = useRef(new Map())
@@ -618,6 +615,42 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
     return queueProductOperation(id, operation, patch)
   }
 
+  const applyRecognizedProducts = (recognizedProducts) => {
+    const byId = new Map((recognizedProducts || []).map((product) => [product.id, product]))
+    recognizedProducts?.forEach((product) => versions.current.set(product.id, product.version || 1))
+    setProducts((current) => current.map((product) => byId.get(product.id) || product))
+  }
+
+  const recognizeAllUnpublished = async () => {
+    if (isRecognizing) return
+    setIsRecognizing(true)
+    setMessage('正在重新識別未上架商品的價格…')
+    try {
+      const result = await recognizeUnpublishedPrices(adminToken)
+      applyRecognizedProducts(result.products)
+      setMessage(`重新識別完成：掃描 ${result.scanned} 筆，成功 ${result.recognized} 筆，更新 ${result.changed || 0} 筆，${result.unknown} 筆待確認。`)
+    } catch (caught) {
+      setMessage(caught.message || '重新識別價格失敗，請稍後再試。')
+    } finally {
+      setIsRecognizing(false)
+    }
+  }
+
+  const recognizeOneProduct = async (product) => {
+    if (recognizingProductId || isRecognizing) return
+    setRecognizingProductId(product.id)
+    setMessage(`正在重新識別 ${product.code}…`)
+    try {
+      const result = await recognizeImagePrice(product.imageKey, adminToken)
+      if (result.product) applyRecognizedProducts([result.product])
+      setMessage(result.recognized ? `${product.code} 已識別為 ${formatPrice(result.price)}。` : `${product.code} 尚無可信價格，請手動確認。`)
+    } catch (caught) {
+      setMessage(caught.message || `${product.code} 重新識別失敗。`)
+    } finally {
+      setRecognizingProductId('')
+    }
+  }
+
   const publishDrafts = async () => {
     const drafts = products.filter((product) => product.status === 'draft')
     if (!drafts.length) {
@@ -688,6 +721,9 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
           <button type="button" onClick={publishDrafts} className="inline-flex h-9 items-center gap-2 rounded border border-zinc-600 px-3 text-sm font-bold text-zinc-100 transition hover:border-zinc-300">
             <Upload size={16} />一鍵上架
           </button>
+          <button type="button" onClick={recognizeAllUnpublished} disabled={isRecognizing || Boolean(recognizingProductId)} className="inline-flex h-9 items-center gap-2 rounded border border-zinc-600 px-3 text-sm font-bold text-zinc-100 transition hover:border-zinc-300 disabled:opacity-40">
+            {isRecognizing ? <LoaderCircle size={16} className="animate-spin" /> : <RotateCcw size={16} />}重新識別未上架價格
+          </button>
           <a href="#/settings" className="inline-flex h-9 items-center gap-2 rounded border border-zinc-700 px-3 text-sm font-bold text-zinc-200"><Settings2 size={16} />設定</a>
           <IconButton label={isClearing ? '正在清空全部資料' : '清空全部測試資料'} onClick={clearAll} disabled={isClearing} className="border border-zinc-700 text-zinc-400 hover:border-zinc-400 hover:text-white">
             {isClearing ? <LoaderCircle size={16} className="animate-spin" /> : <Trash2 size={16} />}
@@ -733,7 +769,7 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
             </thead>
             <tbody className="divide-y divide-zinc-800">
               {products.slice().sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).map((product) => (
-                <AdminRow key={product.id} product={product} updateProduct={updateProduct} removeProduct={removeProduct} openPreview={setPreviewProduct} />
+                <AdminRow key={product.id} product={product} updateProduct={updateProduct} removeProduct={removeProduct} openPreview={setPreviewProduct} recognizePrice={recognizeOneProduct} recognizing={recognizingProductId === product.id} recognitionDisabled={isRecognizing || Boolean(recognizingProductId)} />
               ))}
             </tbody>
           </table>
@@ -753,7 +789,7 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
   )
 }
 
-function AdminRow({ product, updateProduct, removeProduct, openPreview }) {
+function AdminRow({ product, updateProduct, removeProduct, openPreview, recognizePrice, recognizing, recognitionDisabled }) {
   return (
     <tr className="align-top">
       <td className="px-3 py-3">
@@ -783,6 +819,7 @@ function AdminRow({ product, updateProduct, removeProduct, openPreview }) {
           {['available', 'hidden'].map((status) => <QuickStatus key={status} product={product} updateProduct={updateProduct} status={status} />)}
         </div>
         <div className="flex items-center gap-1">
+          {product.status !== 'available' && <IconButton label={`重新識別 ${product.code} 價格`} onClick={() => recognizePrice(product)} disabled={recognitionDisabled} className="h-7 w-7 border border-zinc-700 text-zinc-400 hover:border-zinc-400 hover:text-white">{recognizing ? <LoaderCircle size={14} className="animate-spin" /> : <RotateCcw size={14} />}</IconButton>}
           {PUBLIC_STATUSES.includes(product.status) && <a className="inline-flex h-7 w-7 items-center justify-center rounded border border-zinc-700 text-zinc-300" href={`#/product/${product.id}`} title="查看商品" aria-label={`查看 ${product.code}`}><ExternalLink size={14} /></a>}
           <IconButton label={`刪除 ${product.code}`} onClick={() => removeProduct(product)} className="h-7 w-7 border border-zinc-700 text-zinc-400 hover:border-zinc-400 hover:text-white"><Trash2 size={14} /></IconButton>
         </div>

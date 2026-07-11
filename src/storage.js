@@ -92,6 +92,13 @@ export function recognizeImagePrice(imageKey, token) {
   })
 }
 
+export function recognizeUnpublishedPrices(token) {
+  return requestJson('/api/admin/products/recognize-prices', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+}
+
 export function updateProduct(id, patch, version, token) {
   return requestJson(`/api/admin/products/${encodeURIComponent(id)}`, {
     method: 'PATCH',

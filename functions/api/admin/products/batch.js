@@ -2,6 +2,7 @@ import { requireAdmin } from '../../../_lib/auth.js'
 import { writeAudit } from '../../../_lib/audit.js'
 import { errorResponse, json, readJson } from '../../../_lib/http.js'
 import { expectedVersion, normalizeProductInput } from '../../../_lib/products.js'
+import { ensureReadyImage, isPublicStatus, productInputFromRow } from '../../../_lib/uploads.js'
 
 // Batch writes preserve the same optimistic-lock contract as the single-product API.
 export async function onRequestPatch({ request, env }) {
@@ -25,7 +26,8 @@ export async function onRequestPatch({ request, env }) {
       const current = await env.DB.prepare('SELECT * FROM products WHERE id = ?1 AND deleted_at IS NULL').bind(id).first()
       if (!current) throw new Error(`Product ${id} was not found.`)
       if (current.version !== version) throw new Error(`Product ${id} has changed. Reload before updating.`)
-      const product = normalizeProductInput({ ...current, ...operation.patch, id })
+      const product = normalizeProductInput({ ...productInputFromRow(current), ...operation.patch, id })
+      if (isPublicStatus(product.status)) await ensureReadyImage(env, product.imageKey)
       statements.push(env.DB.prepare(
         'UPDATE products SET code = ?1, title = ?2, description = ?3, price = ?4, status = ?5, note = ?6, image_key = ?7, sort_order = ?8, updated_at = ?9, version = version + 1 WHERE id = ?10 AND version = ?11 AND deleted_at IS NULL',
       ).bind(product.code, product.title, product.description, product.price, product.status, product.note, product.imageKey, product.sortOrder, now, id, version))

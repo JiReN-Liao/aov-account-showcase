@@ -96,6 +96,20 @@ export function normalizeProductInput(input, fallback = {}) {
   }
 }
 
+export function productInputFromRow(row) {
+  return {
+    id: row.id,
+    code: row.code,
+    title: row.title,
+    description: row.description,
+    price: row.price,
+    status: row.status,
+    note: row.note,
+    imageKey: row.image_key,
+    sortOrder: row.sort_order,
+  }
+}
+
 export function expectedVersion(request, body = {}) {
   const raw = body.expectedVersion ?? request.headers.get('If-Match')?.replace(/^W\//, '').replaceAll('"', '')
   const version = Number(raw)

@@ -2,6 +2,7 @@ import { requireAdmin } from '../../../_lib/auth.js'
 import { writeAudit } from '../../../_lib/audit.js'
 import { errorResponse, json, readJson } from '../../../_lib/http.js'
 import { expectedVersion, mapProduct, normalizeProductInput } from '../../../_lib/products.js'
+import { ensureReadyImage, isPublicStatus, productInputFromRow } from '../../../_lib/uploads.js'
 
 export async function onRequestPatch({ request, params, env }) {
   const auth = await requireAdmin(request, env)
@@ -17,9 +18,14 @@ export async function onRequestPatch({ request, params, env }) {
 
   let normalized
   try {
-    normalized = normalizeProductInput({ ...current, ...body, id, version })
+    normalized = normalizeProductInput({ ...productInputFromRow(current), ...body, id })
   } catch (error) {
     return errorResponse(error.message, 400, 'INVALID_PRODUCT')
+  }
+  try {
+    if (isPublicStatus(normalized.status)) await ensureReadyImage(env, normalized.imageKey)
+  } catch (error) {
+    return errorResponse(error.message, 409, 'IMAGE_NOT_READY')
   }
 
   const updatedAt = new Date().toISOString()

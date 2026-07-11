@@ -1,6 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  createProducts,
+  ArrowLeft,
+  ArrowUpDown,
+  Check,
+  ChevronDown,
+  ExternalLink,
+  ImagePlus,
+  LogOut,
+  Plus,
+  RotateCcw,
+  Search,
+  Settings2,
+  SlidersHorizontal,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react'
+import {
+  cancelUploadBatch,
+  createUploadBatch,
   defaultSettings,
   deleteImage,
   loadCloudCatalog,
@@ -9,6 +27,7 @@ import {
   listAdminCatalog,
   loginAdmin,
   putImage,
+  registerUploadItems,
   saveAdminSettings,
   softDeleteProduct,
   setupAdmin,
@@ -17,16 +36,18 @@ import {
 } from './storage'
 
 const STATUSES = {
-  draft: { label: '草稿', chip: 'bg-zinc-600 text-zinc-100' },
-  available: { label: '出售中', chip: 'bg-emerald-500 text-emerald-950' },
-  reserved: { label: '洽談中', chip: 'bg-amber-400 text-amber-950' },
-  sold: { label: '已售出', chip: 'bg-zinc-300 text-zinc-900' },
-  hidden: { label: '隱藏', chip: 'bg-zinc-800 text-zinc-200' },
+  draft: { label: '草稿', chip: 'border-zinc-700 bg-zinc-900 text-zinc-300' },
+  available: { label: '出售中', chip: 'border-zinc-300 bg-zinc-100 text-zinc-950' },
+  reserved: { label: '洽談中', chip: 'border-zinc-600 bg-zinc-800 text-zinc-100' },
+  sold: { label: '已售出', chip: 'border-zinc-700 bg-zinc-800 text-zinc-400' },
+  hidden: { label: '隱藏', chip: 'border-zinc-800 bg-zinc-950 text-zinc-500' },
 }
 
 const PUBLIC_STATUSES = ['available', 'reserved', 'sold']
 const currency = new Intl.NumberFormat('zh-TW')
 const ADMIN_SESSION_KEY = 'aov-marketplace:admin-session:v1'
+const UPLOAD_CONCURRENCY = 4
+const UPLOAD_ITEM_CHUNK_SIZE = 20
 
 export default function App() {
   const [products, setProductsState] = useState(() => loadProducts())
@@ -118,20 +139,18 @@ function parseRoute(hash) {
 
 function Header({ settings, isAdmin, onLogout }) {
   return (
-    <header className="sticky top-0 z-30 border-b border-zinc-800 bg-black/90 backdrop-blur">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-3 py-3 sm:px-4">
-        <a href="#/" className="min-w-0 truncate text-base font-black text-white sm:text-xl">
+    <header className="sticky top-0 z-30 border-b border-zinc-800 bg-black/95">
+      <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3 px-3 py-3 sm:px-5">
+        <a href="#/" className="min-w-0 truncate text-sm font-black text-white sm:text-base">
           {settings.siteName || defaultSettings.siteName}
         </a>
-        <nav className="flex shrink-0 items-center gap-1 text-sm sm:gap-2">
+        <nav className="flex shrink-0 items-center gap-1 text-sm">
           <NavLink href="#/">商品牆</NavLink>
           {isAdmin && (
             <>
               <NavLink href="#/admin">後台</NavLink>
               <NavLink href="#/settings">設定</NavLink>
-              <button type="button" onClick={onLogout} className="rounded-md px-2 py-2 text-zinc-300 hover:bg-zinc-900 hover:text-white">
-                登出
-              </button>
+              <IconButton label="登出" onClick={onLogout}><LogOut size={16} /></IconButton>
             </>
           )}
         </nav>
@@ -142,7 +161,7 @@ function Header({ settings, isAdmin, onLogout }) {
 
 function NavLink({ href, children }) {
   return (
-    <a className="rounded-md px-2 py-2 text-zinc-300 hover:bg-zinc-900 hover:text-white" href={href}>
+    <a className="rounded px-2.5 py-2 text-zinc-400 transition hover:bg-zinc-900 hover:text-white" href={href}>
       {children}
     </a>
   )
@@ -190,13 +209,14 @@ function AdminAuthPage({ settings, setSettings, onLogin, target }) {
 
   return (
     <main className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-md place-items-center px-3 py-8 sm:px-4">
-      <form onSubmit={submit} className="w-full space-y-4 rounded-lg border border-zinc-800 bg-zinc-950 p-5 shadow-2xl shadow-black">
+      <form onSubmit={submit} className="w-full space-y-5 border border-zinc-800 bg-zinc-950 p-5 shadow-[0_12px_30px_rgba(0,0,0,0.2)]">
         <div>
-          <h1 className="text-2xl font-black">{hasAdminAccount ? '管理員登入' : '建立管理員帳號'}</h1>
+          <p className="text-xs font-bold text-zinc-500">CONTROL ROOM</p>
+          <h1 className="mt-1 text-2xl font-black">{hasAdminAccount ? '管理員登入' : '建立管理員帳號'}</h1>
           <p className="mt-2 text-sm leading-6 text-zinc-400">
             {hasAdminAccount ? '登入後才能進入後台與設定頁。' : '第一次使用請先建立雲端管理員帳號。'}
           </p>
-          <p className="mt-2 rounded-md border border-amber-900 bg-amber-950/60 p-2 text-xs leading-5 text-amber-200">
+          <p className="mt-3 border-l-2 border-zinc-500 bg-zinc-900 px-3 py-2 text-xs leading-5 text-zinc-400">
             管理員帳密經雜湊後存於 Cloudflare D1，登入階段不會把密碼傳回瀏覽器。
           </p>
         </div>
@@ -219,8 +239,8 @@ function AdminAuthPage({ settings, setSettings, onLogin, target }) {
             autoComplete={hasAdminAccount ? 'current-password' : 'new-password'}
           />
         </label>
-        {error && <p className="rounded-md border border-red-900 bg-red-950 px-3 py-2 text-sm text-red-200">{error}</p>}
-        <button type="submit" className="h-11 w-full rounded-md bg-yellow-300 font-black text-zinc-950">
+        {error && <p className="border-l-2 border-zinc-200 bg-zinc-900 px-3 py-2 text-sm text-zinc-200">{error}</p>}
+        <button type="submit" className="h-11 w-full rounded bg-zinc-100 font-black text-zinc-950 transition hover:bg-white">
           {hasAdminAccount ? '登入後台' : '建立並登入'}
         </button>
       </form>
@@ -251,28 +271,39 @@ function HomePage({ products, settings }) {
   }, [products, query, status, sort])
 
   return (
-    <main className="mx-auto max-w-7xl px-3 py-4 sm:px-4">
-      <section className="mb-4 space-y-3">
-        <div className="grid gap-2 md:grid-cols-[1fr_auto_auto]">
-          <input className="h-11 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-white placeholder:text-zinc-500" placeholder="搜尋商品編號、標題、備註" value={query} onChange={(event) => setQuery(event.target.value)} />
-          <select className="h-11 rounded-md border border-zinc-700 bg-zinc-950 px-3" value={status} onChange={(event) => setStatus(event.target.value)}>
+    <main className="mx-auto max-w-[1600px] px-3 py-3 sm:px-5 sm:py-5">
+      <section className="mb-4 border-y border-zinc-800 py-3">
+        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_10rem_10rem]">
+          <label className="relative block">
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={17} />
+            <input className="h-10 w-full rounded border border-zinc-700 bg-zinc-950 pl-10 pr-3 text-sm text-white placeholder:text-zinc-500" placeholder="搜尋編號、標題或備註" value={query} onChange={(event) => setQuery(event.target.value)} />
+          </label>
+          <label className="relative block">
+            <SlidersHorizontal className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={15} />
+            <select aria-label="篩選商品狀態" className="h-10 w-full appearance-none rounded border border-zinc-700 bg-zinc-950 pl-9 pr-8 text-sm" value={status} onChange={(event) => setStatus(event.target.value)}>
             <option value="all">全部狀態</option>
             <option value="available">出售中</option>
             <option value="reserved">洽談中</option>
             <option value="sold">已售出</option>
-          </select>
-          <select className="h-11 rounded-md border border-zinc-700 bg-zinc-950 px-3" value={sort} onChange={(event) => setSort(event.target.value)}>
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500" size={15} />
+          </label>
+          <label className="relative block">
+            <ArrowUpDown className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={15} />
+            <select aria-label="商品排序" className="h-10 w-full appearance-none rounded border border-zinc-700 bg-zinc-950 pl-9 pr-8 text-sm" value={sort} onChange={(event) => setSort(event.target.value)}>
             <option value="default">預設排序</option>
             <option value="priceAsc">價格低到高</option>
             <option value="priceDesc">價格高到低</option>
             <option value="newest">最新上架</option>
-          </select>
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500" size={15} />
+          </label>
         </div>
-        <p className="text-sm text-zinc-400">目前顯示 {visibleProducts.length} 筆公開商品</p>
+        <p className="mt-3 text-xs font-medium text-zinc-500">公開商品 {visibleProducts.length} 件</p>
       </section>
 
       {visibleProducts.length ? (
-        <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <section className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 lg:grid-cols-5">
           {visibleProducts.map((product) => <ProductCard key={product.id} product={product} settings={settings} />)}
         </section>
       ) : (
@@ -285,18 +316,18 @@ function HomePage({ products, settings }) {
 function ProductCard({ product, settings }) {
   const isSold = product.status === 'sold'
   return (
-    <article className={`overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950 shadow-lg shadow-black/30 ${isSold ? 'opacity-75' : ''}`}>
-      <a href={`#/product/${product.id}`} className="relative block h-36 bg-black sm:h-44">
-        <StoredImage imageKey={product.imageKey} imageUrl={product.imageUrl} alt={product.code} className="h-full w-full object-contain" />
-        {isSold && <div className="absolute inset-0 grid place-items-center bg-black/60 text-lg font-black text-zinc-100">已售出</div>}
+    <article className={`overflow-hidden rounded border border-zinc-800 bg-zinc-950 shadow-[0_3px_9px_rgba(0,0,0,0.16)] ${isSold ? 'opacity-70' : ''}`}>
+      <a href={`#/product/${product.id}`} className="relative block aspect-[4/5] bg-black p-1.5">
+        <StoredImage imageKey={product.imageKey} imageUrl={product.imageUrl} alt={product.code} className={`h-full w-full object-contain ${isSold ? 'grayscale' : ''}`} />
+        {isSold && <div className="absolute inset-0 grid place-items-center bg-black/65 text-sm font-black text-zinc-100">已售出</div>}
       </a>
       <div className="space-y-2 p-2.5">
         <div className="flex items-center justify-between gap-2">
-          <a href={`#/product/${product.id}`} className="truncate text-sm font-bold text-zinc-100">{product.code}</a>
+          <a href={`#/product/${product.id}`} className="truncate text-xs font-black text-zinc-100">{product.code}</a>
           <StatusChip status={product.status} />
         </div>
-        {product.title && <p className="line-clamp-1 text-xs text-zinc-400">{product.title}</p>}
-        {formatPrice(product.price) && <p className="text-lg font-black text-yellow-300">{formatPrice(product.price)}</p>}
+        {product.title && <p className="line-clamp-1 text-xs text-zinc-500">{product.title}</p>}
+        {formatPrice(product.price) && <p className="text-base font-black tabular-nums text-zinc-100">{formatPrice(product.price)}</p>}
         <ContactButton product={product} settings={settings} compact />
       </div>
     </article>
@@ -309,21 +340,21 @@ function DetailPage({ products, settings, productId }) {
 
   if (!product || !PUBLIC_STATUSES.includes(product.status)) {
     return (
-      <main className="mx-auto max-w-4xl px-3 py-6 sm:px-4">
+      <main className="mx-auto max-w-4xl px-3 py-6 sm:px-5">
         <EmptyState title="找不到公開商品" text="這筆商品可能還是草稿、已隱藏，或已被刪除。" />
-        <a href="#/" className="mt-4 inline-flex rounded-md bg-zinc-100 px-4 py-2 font-bold text-zinc-950">返回商品列表</a>
+        <a href="#/" className="mt-4 inline-flex items-center gap-2 rounded bg-zinc-100 px-4 py-2 font-bold text-zinc-950"><ArrowLeft size={16} />返回商品列表</a>
       </main>
     )
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-3 py-4 sm:px-4">
-      <a href="#/" className="mb-3 inline-flex rounded-md border border-zinc-700 px-3 py-2 text-sm text-zinc-200">返回商品列表</a>
-      <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <button type="button" onClick={() => setPreviewOpen(true)} className="min-h-[60vh] overflow-hidden rounded-lg border border-zinc-800 bg-black p-2">
+    <main className="mx-auto max-w-[1400px] px-3 py-4 sm:px-5">
+      <a href="#/" className="mb-4 inline-flex items-center gap-2 rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition hover:border-zinc-400 hover:text-white"><ArrowLeft size={16} />商品列表</a>
+      <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <button type="button" onClick={() => setPreviewOpen(true)} className="min-h-[56vh] overflow-hidden rounded border border-zinc-800 bg-black p-2" title="查看完整圖片" aria-label={`查看 ${product.code} 的完整圖片`}>
           <StoredImage imageKey={product.imageKey} imageUrl={product.imageUrl} alt={product.code} className="h-full max-h-[78vh] w-full object-contain" />
         </button>
-        <aside className="space-y-4 rounded-lg border border-zinc-800 bg-zinc-950 p-4">
+        <aside className="space-y-5 border-y border-zinc-800 py-4 lg:border lg:p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-sm text-zinc-400">商品編號</p>
@@ -332,11 +363,11 @@ function DetailPage({ products, settings, productId }) {
             <StatusChip status={product.status} />
           </div>
           {product.title && <p className="text-lg font-bold text-zinc-200">{product.title}</p>}
-          {formatPrice(product.price) && <p className="text-3xl font-black text-yellow-300">{formatPrice(product.price)}</p>}
+          {formatPrice(product.price) && <p className="text-3xl font-black tabular-nums text-zinc-100">{formatPrice(product.price)}</p>}
           {product.description && (
             <div>
               <h2 className="mb-2 text-sm font-bold text-zinc-300">備註</h2>
-              <p className="whitespace-pre-wrap rounded-md bg-zinc-900 p-3 text-sm leading-6 text-zinc-200">{product.description}</p>
+              <p className="whitespace-pre-wrap border-l-2 border-zinc-700 bg-zinc-900 px-3 py-2 text-sm leading-6 text-zinc-300">{product.description}</p>
             </div>
           )}
           <ContactButton product={product} settings={settings} />
@@ -350,8 +381,12 @@ function DetailPage({ products, settings, productId }) {
 function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
   const [message, setMessage] = useState('')
   const [previewProduct, setPreviewProduct] = useState(null)
+  const [uploads, setUploads] = useState([])
+  const [activeUploadBatch, setActiveUploadBatch] = useState('')
   const queues = useRef(new Map())
   const versions = useRef(new Map())
+  const uploadControllers = useRef(new Map())
+  const cancelledUploadBatches = useRef(new Set())
 
   products.forEach((product) => versions.current.set(product.id, product.version || 1))
 
@@ -369,38 +404,189 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
         setProducts((current) => current.map((product) => (product.id === id ? { ...product, version: result.product.version, updatedAt: result.product.updatedAt } : product)))
       }
       return result
-    }).catch((error) => setMessage(error.message || 'Cloud update failed. Reload to resolve a conflict.'))
+    }).catch((error) => setMessage(error.message || '雲端更新失敗，請重新整理後再處理版本衝突。'))
     queues.current.set(id, task)
     return task
   }
 
-  const nextCodeNumber = () => products.reduce((max, product) => {
-    const match = product.code?.match(/AOV-(\d+)/)
-    return match ? Math.max(max, Number(match[1])) : max
-  }, 0) + 1
+  const patchUpload = (clientItemId, patch) => {
+    setUploads((current) => current.map((upload) => (
+      upload.clientItemId === clientItemId ? { ...upload, ...patch } : upload
+    )))
+  }
 
-  const handleUpload = async (event) => {
-    const files = Array.from(event.target.files || []).filter((file) => file.type.startsWith('image/'))
-    if (!files.length) return
-    const now = new Date().toISOString()
-    const start = nextCodeNumber()
-    const created = []
+  const runUploadWorkers = async (batchId, jobs) => {
+    let nextIndex = 0
+    const worker = async () => {
+      while (nextIndex < jobs.length) {
+        const job = jobs[nextIndex]
+        nextIndex += 1
+        if (cancelledUploadBatches.current.has(batchId)) {
+          patchUpload(job.clientItemId, { status: 'cancelled' })
+          continue
+        }
+        const controller = new AbortController()
+        uploadControllers.current.set(job.clientItemId, controller)
+        patchUpload(job.clientItemId, { status: 'uploading', error: '' })
+        try {
+          await putImage(job.imageKey, job.file, adminToken, {
+            batchId,
+            signal: controller.signal,
+            onProgress: (loaded, total) => patchUpload(job.clientItemId, { loaded, total }),
+          })
+          patchUpload(job.clientItemId, { status: 'ready', loaded: job.file.size, total: job.file.size })
+        } catch (caught) {
+          const cancelled = caught?.name === 'AbortError' || cancelledUploadBatches.current.has(batchId)
+          patchUpload(job.clientItemId, {
+            status: cancelled ? 'cancelled' : 'failed',
+            error: cancelled ? '' : (caught.message || '圖片上傳失敗。'),
+          })
+        } finally {
+          uploadControllers.current.delete(job.clientItemId)
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, jobs.length) }, worker))
+    if (!cancelledUploadBatches.current.has(batchId)) setMessage('批次上傳完成，請確認失敗檔案後再上架。')
+    setActiveUploadBatch((current) => (current === batchId ? '' : current))
+  }
 
-    for (const [index, file] of files.entries()) {
-      const id = crypto.randomUUID()
-      const code = `AOV-${String(start + index).padStart(3, '0')}`
-      const imageKey = `img-${id}`
-      const upload = await putImage(imageKey, file, adminToken)
-      created.push({ id, code, title: '', description: '', price: '', status: 'draft', note: '', imageKey, sortOrder: products.length + index + 1, createdAt: now, updatedAt: now, version: 1 })
-      if (upload?.imageUrl) created[created.length - 1].imageUrl = upload.imageUrl
+  const handleBatchUpload = async (event) => {
+    const input = event.target
+    const files = Array.from(input.files || []).filter((file) => file.type.startsWith('image/'))
+    input.value = ''
+    if (!files.length || activeUploadBatch) return
+    const batchId = crypto.randomUUID()
+    const jobs = files.map((file, index) => {
+      const clientItemId = crypto.randomUUID()
+      return {
+        batchId,
+        clientItemId,
+        imageKey: `img-${batchId}-${clientItemId}`,
+        file,
+        name: file.name,
+        total: file.size,
+        loaded: 0,
+        sortOrder: products.length + index + 1,
+        status: 'registering',
+        registered: false,
+        error: '',
+      }
+    })
+    setUploads(jobs)
+    setActiveUploadBatch(batchId)
+    cancelledUploadBatches.current.delete(batchId)
+    try {
+      await createUploadBatch(adminToken, batchId)
+    } catch (caught) {
+      setUploads((current) => current.map((upload) => ({ ...upload, status: 'failed', error: caught.message || '無法建立上傳批次。' })))
+      setActiveUploadBatch('')
+      return
     }
 
-    const result = await createProducts(created, adminToken)
-    const saved = result.products || created
-    saved.forEach((product) => versions.current.set(product.id, product.version || 1))
-    setProducts([...products, ...saved])
-    setMessage(`已新增 ${created.length} 筆草稿商品，可在下方批量編輯後發布。`)
-    event.target.value = ''
+    const registered = []
+    for (let start = 0; start < jobs.length; start += UPLOAD_ITEM_CHUNK_SIZE) {
+      if (cancelledUploadBatches.current.has(batchId)) break
+      const chunk = jobs.slice(start, start + UPLOAD_ITEM_CHUNK_SIZE)
+      try {
+        const result = await registerUploadItems(batchId, chunk.map((job) => ({
+          clientItemId: job.clientItemId,
+          imageKey: job.imageKey,
+          contentType: job.file.type || 'application/octet-stream',
+          size: job.file.size,
+          sortOrder: job.sortOrder,
+        })), adminToken)
+        const registeredItems = result.items || []
+        const saved = registeredItems.map((item) => item.product).filter(Boolean)
+        saved.forEach((product) => versions.current.set(product.id, product.version || 1))
+        setProducts((current) => {
+          const known = new Set(current.map((product) => product.id))
+          return [...current, ...saved.filter((product) => !known.has(product.id))]
+        })
+        registeredItems.forEach((item) => patchUpload(item.clientItemId, {
+          status: item.imageStatus === 'ready' ? 'ready' : 'queued',
+          registered: true,
+          error: item.error || '',
+        }))
+        registered.push(...chunk.filter((job) => registeredItems.some((item) => item.clientItemId === job.clientItemId && item.imageStatus !== 'ready')))
+      } catch (caught) {
+        chunk.forEach((job) => patchUpload(job.clientItemId, { status: 'failed', registered: false, error: caught.message || '無法建立這張圖片的商品草稿。' }))
+      }
+    }
+    if (registered.length) await runUploadWorkers(batchId, registered)
+    else setActiveUploadBatch('')
+  }
+
+  const retryFailedUploads = async () => {
+    if (activeUploadBatch) return
+    const failedJobs = uploads.filter((upload) => upload.status === 'failed')
+    const batchId = uploads[0]?.batchId
+    if (!failedJobs.length || !batchId) return
+    setActiveUploadBatch(batchId)
+    cancelledUploadBatches.current.delete(batchId)
+    const uploadJobs = failedJobs.filter((job) => job.registered)
+    uploadJobs.forEach((job) => patchUpload(job.clientItemId, { status: 'queued', error: '', loaded: 0 }))
+
+    const registrationJobs = failedJobs.filter((job) => !job.registered)
+    try {
+      await createUploadBatch(adminToken, batchId)
+    } catch (caught) {
+      registrationJobs.forEach((job) => patchUpload(job.clientItemId, { status: 'failed', error: caught.message || '無法續傳此上傳批次。' }))
+      setActiveUploadBatch('')
+      return
+    }
+
+    for (let start = 0; start < registrationJobs.length; start += UPLOAD_ITEM_CHUNK_SIZE) {
+      const chunk = registrationJobs.slice(start, start + UPLOAD_ITEM_CHUNK_SIZE)
+      try {
+        const result = await registerUploadItems(batchId, chunk.map((job) => ({
+          clientItemId: job.clientItemId,
+          imageKey: job.imageKey,
+          contentType: job.file.type || 'application/octet-stream',
+          size: job.file.size,
+          sortOrder: job.sortOrder,
+        })), adminToken)
+        const registeredItems = result.items || []
+        const itemById = new Map(registeredItems.map((item) => [item.clientItemId, item]))
+        const saved = registeredItems.map((item) => item.product).filter(Boolean)
+        saved.forEach((product) => versions.current.set(product.id, product.version || 1))
+        setProducts((current) => {
+          const known = new Set(current.map((product) => product.id))
+          return [...current, ...saved.filter((product) => !known.has(product.id))]
+        })
+        chunk.forEach((job) => {
+          const item = itemById.get(job.clientItemId)
+          if (!item) {
+            patchUpload(job.clientItemId, { status: 'failed', registered: false, error: '伺服器未建立此圖片的商品草稿。' })
+            return
+          }
+          const ready = item.imageStatus === 'ready'
+          patchUpload(job.clientItemId, { status: ready ? 'ready' : 'queued', registered: true, error: item.error || '', loaded: ready ? job.file.size : 0 })
+          if (!ready) uploadJobs.push({ ...job, registered: true })
+        })
+      } catch (caught) {
+        chunk.forEach((job) => patchUpload(job.clientItemId, { status: 'failed', registered: false, error: caught.message || '無法建立這張圖片的商品草稿。' }))
+      }
+    }
+
+    if (uploadJobs.length) await runUploadWorkers(batchId, uploadJobs)
+    else setActiveUploadBatch('')
+  }
+
+  const cancelUploads = async () => {
+    if (!activeUploadBatch) return
+    const batchId = activeUploadBatch
+    cancelledUploadBatches.current.add(batchId)
+    uploadControllers.current.forEach((controller) => controller.abort())
+    setUploads((current) => current.map((upload) => (
+      ['registering', 'queued', 'uploading'].includes(upload.status) ? { ...upload, status: 'cancelled' } : upload
+    )))
+    try {
+      await cancelUploadBatch(batchId, adminToken)
+      setMessage('已取消批次上傳；已完成的圖片仍保留為草稿。')
+    } catch (caught) {
+      setMessage(caught.message || '無法取消上傳批次。')
+    }
   }
 
   const updateProduct = (id, patch) => {
@@ -410,7 +596,7 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
     return queueProductOperation(id, operation, patch)
   }
 
-  const publishDrafts = () => {
+  const publishDrafts = async () => {
     const drafts = products.filter((product) => product.status === 'draft')
     if (!drafts.length) {
       setMessage('目前沒有草稿商品需要上架。')
@@ -418,8 +604,16 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
     }
     if (!confirm(`確定將 ${drafts.length} 筆草稿商品一鍵上架為出售中？`)) return
 
-    drafts.forEach((product) => updateProduct(product.id, { status: 'available' }))
-    setMessage(`已一鍵上架 ${drafts.length} 筆草稿商品。`)
+    const results = await Promise.allSettled(drafts.map(async (product) => {
+      const result = await updateProductStatus(product.id, 'available', versions.current.get(product.id) || product.version || 1, adminToken)
+      versions.current.set(product.id, result.product.version)
+      return result.product
+    }))
+    const published = results.filter((result) => result.status === 'fulfilled').map((result) => result.value)
+    const publishedById = new Map(published.map((product) => [product.id, product]))
+    setProducts((current) => current.map((product) => publishedById.get(product.id) || product))
+    const failed = results.length - published.length
+    setMessage(failed ? `已上架 ${published.length} 筆，${failed} 筆因圖片尚未完成而保留草稿。` : `已上架 ${published.length} 筆商品。`)
   }
 
   const removeProduct = async (product) => {
@@ -454,31 +648,49 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
   }
 
   return (
-    <main className="mx-auto max-w-7xl px-3 py-4 sm:px-4">
-      <section className="mb-4 grid gap-3 rounded-lg border border-zinc-800 bg-zinc-950 p-4 lg:grid-cols-[1fr_auto]">
-        <div>
-          <h1 className="text-2xl font-black">管理後台</h1>
-          <p className="mt-1 text-sm text-zinc-400">批量上傳會建立草稿商品。文字資料由 D1 儲存，圖片由 Cloudflare KV 儲存。</p>
-          {hasContactMethods(settings) ? <p className="mt-2 text-sm text-zinc-300">目前已有聯絡方式可供買家選擇。</p> : <p className="mt-2 text-sm text-amber-300">尚未設定聯絡方式，請到設定頁填入 LINE、Facebook 或 Instagram 連結。</p>}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="cursor-pointer rounded-md bg-yellow-300 px-4 py-2 font-black text-zinc-950">
-            批量上傳圖片
-            <input className="hidden" type="file" accept="image/*" multiple onChange={handleUpload} />
+    <main className="mx-auto max-w-[1600px] px-3 py-4 sm:px-5">
+      <section className="sticky top-[57px] z-20 -mx-3 mb-5 border-y border-zinc-800 bg-black/95 px-3 py-3 sm:-mx-5 sm:px-5">
+        <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
+          <div>
+            <div className="flex items-center gap-2"><Settings2 size={17} className="text-zinc-400" /><h1 className="text-lg font-black">管理後台</h1></div>
+            <p className="mt-1 text-xs text-zinc-500">{products.length} 筆商品 · 批量上傳會先建立草稿</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+          <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded bg-zinc-100 px-3 text-sm font-black text-zinc-950 transition hover:bg-white">
+            <ImagePlus size={16} />批量上傳
+            <input className="hidden" type="file" accept="image/*" multiple disabled={Boolean(activeUploadBatch)} onChange={handleBatchUpload} />
           </label>
-          <button type="button" onClick={publishDrafts} className="rounded-md bg-emerald-400 px-4 py-2 font-black text-emerald-950">
-            一鍵上架
+          <button type="button" onClick={publishDrafts} className="inline-flex h-9 items-center gap-2 rounded border border-zinc-600 px-3 text-sm font-bold text-zinc-100 transition hover:border-zinc-300">
+            <Upload size={16} />一鍵上架
           </button>
-          <a href="#/settings" className="rounded-md border border-zinc-700 px-4 py-2 font-bold text-zinc-100">設定聯絡網址</a>
-          <button type="button" onClick={clearAll} className="rounded-md border border-red-800 px-4 py-2 font-bold text-red-300">清空測試資料</button>
+          <a href="#/settings" className="inline-flex h-9 items-center gap-2 rounded border border-zinc-700 px-3 text-sm font-bold text-zinc-200"><Settings2 size={16} />設定</a>
+          <IconButton label="清空全部測試資料" onClick={clearAll} className="border border-zinc-700 text-zinc-400 hover:border-zinc-400 hover:text-white"><Trash2 size={16} /></IconButton>
+          </div>
         </div>
       </section>
 
-      {message && <p className="mb-3 rounded-md border border-emerald-800 bg-emerald-950 px-3 py-2 text-sm text-emerald-200">{message}</p>}
-      {syncError && <p className="mb-3 rounded-md border border-red-800 bg-red-950 px-3 py-2 text-sm text-red-200">同步失敗：{syncError}</p>}
+      {message && <p className="mb-3 border-l-2 border-zinc-300 bg-zinc-900 px-3 py-2 text-sm text-zinc-200">{message}</p>}
+      {syncError && <p className="mb-3 border-l-2 border-zinc-500 bg-zinc-900 px-3 py-2 text-sm text-zinc-300">同步失敗：{syncError}</p>}
+      {!hasContactMethods(settings) && <p className="mb-3 border-l-2 border-zinc-600 px-3 py-2 text-sm text-zinc-400">尚未設定聯絡方式，請到設定頁填入 LINE、Facebook 或 Instagram 連結。</p>}
+
+      {uploads.length > 0 && (
+        <section className="mb-5 border-y border-zinc-800 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+            <strong className="font-black">上傳進度 <span className="tabular-nums text-zinc-400">{uploads.filter((upload) => upload.status === 'ready').length}/{uploads.length}</span></strong>
+            <div className="flex gap-2">
+              <button type="button" className="inline-flex h-8 items-center gap-1.5 rounded border border-zinc-700 px-2.5 text-xs font-bold disabled:opacity-40" disabled={Boolean(activeUploadBatch) || !uploads.some((upload) => upload.status === 'failed')} onClick={retryFailedUploads}><RotateCcw size={14} />重試失敗項目</button>
+              <button type="button" className="inline-flex h-8 items-center gap-1.5 rounded border border-zinc-700 px-2.5 text-xs font-bold text-zinc-300 disabled:opacity-40" disabled={!activeUploadBatch} onClick={cancelUploads}><X size={14} />取消上傳</button>
+            </div>
+          </div>
+          <progress className="mt-3 h-1.5 w-full accent-zinc-100" value={uploads.reduce((sum, upload) => sum + Math.min(upload.loaded || 0, upload.total || 0), 0)} max={uploads.reduce((sum, upload) => sum + (upload.total || 0), 0) || 1} />
+          <ul className="mt-3 max-h-48 divide-y divide-zinc-900 overflow-y-auto text-xs">
+            {uploads.map((upload) => <li key={upload.clientItemId} className="grid grid-cols-[5.5rem_minmax(0,1fr)_auto] gap-2 py-2"><span className="font-bold text-zinc-500">{uploadStatusLabel(upload.status)}</span><span className="min-w-0 truncate text-zinc-300">{upload.name}</span>{upload.error ? <span className="max-w-56 truncate text-zinc-500" title={upload.error}>{upload.error}</span> : <span className="tabular-nums text-zinc-600">{upload.total ? `${Math.round(((upload.loaded || 0) / upload.total) * 100)}%` : ''}</span>}</li>)}
+          </ul>
+        </section>
+      )}
 
       {products.length ? (
-        <section className="overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-950">
+        <section className="overflow-x-auto border-y border-zinc-800">
           <table className="w-full min-w-[980px] text-left text-sm">
             <thead className="bg-zinc-900 text-xs uppercase text-zinc-400">
               <tr>
@@ -520,7 +732,7 @@ function AdminRow({ product, updateProduct, removeProduct, openPreview }) {
       <td className="px-3 py-3">
         <button
           type="button"
-          className="h-20 w-20 overflow-hidden rounded-md bg-black ring-1 ring-zinc-800 transition hover:ring-yellow-300"
+          className="h-20 w-20 overflow-hidden rounded bg-black ring-1 ring-zinc-800 transition hover:ring-zinc-300"
           onClick={() => openPreview(product)}
           aria-label={`放大查看 ${product.code} 圖片`}
           title="點擊放大查看"
@@ -542,15 +754,17 @@ function AdminRow({ product, updateProduct, removeProduct, openPreview }) {
         <div className="flex flex-wrap gap-1">
           {['available', 'reserved', 'sold', 'hidden'].map((status) => <QuickStatus key={status} product={product} updateProduct={updateProduct} status={status} />)}
         </div>
-        {PUBLIC_STATUSES.includes(product.status) && <a className="inline-flex rounded-md border border-zinc-700 px-2 py-1 text-xs text-zinc-200" href={`#/product/${product.id}`}>查看</a>}
-        <button type="button" onClick={() => removeProduct(product)} className="ml-1 rounded-md border border-red-800 px-2 py-1 text-xs text-red-300">刪除</button>
+        <div className="flex items-center gap-1">
+          {PUBLIC_STATUSES.includes(product.status) && <a className="inline-flex h-7 w-7 items-center justify-center rounded border border-zinc-700 text-zinc-300" href={`#/product/${product.id}`} title="查看商品" aria-label={`查看 ${product.code}`}><ExternalLink size={14} /></a>}
+          <IconButton label={`刪除 ${product.code}`} onClick={() => removeProduct(product)} className="h-7 w-7 border border-zinc-700 text-zinc-400 hover:border-zinc-400 hover:text-white"><Trash2 size={14} /></IconButton>
+        </div>
       </td>
     </tr>
   )
 }
 
 function QuickStatus({ product, updateProduct, status }) {
-  return <button type="button" onClick={() => updateProduct(product.id, { status })} className={`rounded px-2 py-1 text-xs ${product.status === status ? 'bg-yellow-300 text-zinc-950' : 'bg-zinc-800 text-zinc-300'}`}>{STATUSES[status].label}</button>
+  return <button type="button" title={`標示為${STATUSES[status].label}`} onClick={() => updateProduct(product.id, { status })} className={`rounded border px-2 py-1 text-xs ${product.status === status ? 'border-zinc-200 bg-zinc-100 text-zinc-950' : 'border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-zinc-600'}`}>{STATUSES[status].label}</button>
 }
 
 function SettingsPage({ settings, setSettings, adminToken }) {
@@ -629,10 +843,10 @@ function SettingsPage({ settings, setSettings, adminToken }) {
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-3 py-4 sm:px-4">
-      <form onSubmit={submit} className="space-y-4 rounded-lg border border-zinc-800 bg-zinc-950 p-4">
+    <main className="mx-auto max-w-4xl px-3 py-4 sm:px-5">
+      <form onSubmit={submit} className="space-y-5 border-y border-zinc-800 py-4">
         <div>
-          <h1 className="text-2xl font-black">設定頁</h1>
+          <div className="flex items-center gap-2"><Settings2 size={17} className="text-zinc-400" /><h1 className="text-xl font-black">設定</h1></div>
           <p className="mt-1 text-sm text-zinc-400">這裡設定三個聯絡方式。買家點擊聯絡購買後，會先選擇想用哪個平台聯絡。</p>
         </div>
         <label className="block">
@@ -642,7 +856,7 @@ function SettingsPage({ settings, setSettings, adminToken }) {
         <div className="space-y-3">
           <h2 className="text-sm font-bold text-zinc-300">聯絡方式</h2>
           {draft.contactMethods.map((method, index) => (
-            <div key={method.id} className="grid gap-2 rounded-md border border-zinc-800 bg-zinc-900/60 p-3 sm:grid-cols-[9rem_1fr]">
+            <div key={method.id} className="grid gap-2 border-t border-zinc-800 pt-3 sm:grid-cols-[9rem_1fr]">
               <label className="block">
                 <span className="mb-1 block text-xs font-bold text-zinc-400">名稱</span>
                 <input
@@ -663,16 +877,16 @@ function SettingsPage({ settings, setSettings, adminToken }) {
             </div>
           ))}
         </div>
-        <div className="space-y-3 rounded-md border border-zinc-800 bg-zinc-900/60 p-3">
+        <div className="space-y-3 border-t border-zinc-800 pt-4">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-sm font-bold text-zinc-300">管理員帳號</h2>
-            <button type="button" onClick={addAdminUser} className="rounded-md bg-zinc-100 px-3 py-2 text-sm font-black text-zinc-950">
-              新增管理員
+            <button type="button" onClick={addAdminUser} className="inline-flex h-9 items-center gap-2 rounded bg-zinc-100 px-3 text-sm font-black text-zinc-950">
+              <Plus size={16} />新增管理員
             </button>
           </div>
           <div className="space-y-3">
             {adminUsersDraft.map((user, index) => (
-              <div key={user.id} className="grid gap-2 rounded-md border border-zinc-800 bg-zinc-950 p-3 sm:grid-cols-[1fr_1fr_auto]">
+              <div key={user.id} className="grid gap-2 border-t border-zinc-800 pt-3 sm:grid-cols-[1fr_1fr_auto]">
                 <label className="block">
                   <span className="mb-1 block text-xs font-bold text-zinc-400">帳號</span>
                   <input
@@ -693,18 +907,16 @@ function SettingsPage({ settings, setSettings, adminToken }) {
                     autoComplete="new-password"
                   />
                 </label>
-                <button type="button" onClick={() => removeAdminUser(user.id)} className="self-end rounded-md border border-red-800 px-3 py-2 text-sm font-bold text-red-300">
-                  刪除
-                </button>
+                <IconButton label={`刪除管理員 ${user.username || index + 1}`} onClick={() => removeAdminUser(user.id)} className="self-end border border-zinc-700 text-zinc-400 hover:border-zinc-400 hover:text-white"><Trash2 size={16} /></IconButton>
               </div>
             ))}
           </div>
         </div>
-        <button type="submit" disabled={saving} className="rounded-md bg-yellow-300 px-4 py-2 font-black text-zinc-950 disabled:opacity-60">
-          {saving ? '儲存中' : '儲存設定'}
+        <button type="submit" disabled={saving} className="inline-flex h-10 items-center gap-2 rounded bg-zinc-100 px-4 font-black text-zinc-950 disabled:opacity-60">
+          <Check size={16} />{saving ? '儲存中' : '儲存設定'}
         </button>
-        {saved && <p className="text-sm text-emerald-300">已儲存設定。</p>}
-        {saveError && <p className="text-sm text-red-300">{saveError}</p>}
+        {saved && <p className="text-sm text-zinc-300">已儲存設定。</p>}
+        {saveError && <p className="text-sm text-zinc-400">{saveError}</p>}
       </form>
     </main>
   )
@@ -738,7 +950,7 @@ function ImagePreview({ imageKey, imageUrl, alt, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/95">
-      <div className="fixed left-0 right-0 top-0 z-10 flex items-center justify-end gap-2 border-b border-zinc-800 bg-black/90 p-3 backdrop-blur">
+      <div className="fixed left-0 right-0 top-0 z-10 flex items-center justify-end gap-2 border-b border-zinc-800 bg-black/95 p-3">
         {[
           ['fit', '完整'],
           [100, '100%'],
@@ -749,16 +961,14 @@ function ImagePreview({ imageKey, imageUrl, alt, onClose }) {
             key={value}
             type="button"
             onClick={() => setZoom(value)}
-            className={`rounded-md px-3 py-2 text-sm font-bold ${
-              zoom === value ? 'bg-yellow-300 text-zinc-950' : 'bg-zinc-800 text-zinc-100'
+            className={`rounded px-3 py-2 text-sm font-bold ${
+              zoom === value ? 'bg-zinc-100 text-zinc-950' : 'bg-zinc-800 text-zinc-100'
             }`}
           >
             {label}
           </button>
         ))}
-        <button type="button" onClick={onClose} className="rounded-md bg-zinc-100 px-3 py-2 font-bold text-zinc-950">
-          關閉
-        </button>
+        <IconButton label="關閉預覽" onClick={onClose} className="bg-zinc-100 text-zinc-950 hover:bg-white"><X size={17} /></IconButton>
       </div>
       <div className="h-dvh overflow-auto px-3 pb-8 pt-20">
         <div className="mx-auto flex min-h-[calc(100dvh-7rem)] min-w-full items-center justify-center">
@@ -790,7 +1000,7 @@ function ImagePreview({ imageKey, imageUrl, alt, onClose }) {
 
 function StatusChip({ status }) {
   const meta = STATUSES[status] || STATUSES.draft
-  return <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-black ${meta.chip}`}>{meta.label}</span>
+  return <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-black ${meta.chip}`}>{meta.label}</span>
 }
 
 function ContactButton({ product, settings, compact = false }) {
@@ -799,15 +1009,15 @@ function ContactButton({ product, settings, compact = false }) {
   const disabled = !methods.some((method) => method.url) || product.status === 'sold'
   const label = product.status === 'sold' ? '已售出' : '聯絡購買'
 
-  if (disabled) return <button type="button" disabled className={`${compact ? 'h-9 text-sm' : 'h-11'} w-full rounded-md bg-zinc-800 font-black text-zinc-500`}>{label}</button>
+  if (disabled) return <button type="button" disabled className={`${compact ? 'h-8 text-xs' : 'h-10 text-sm'} w-full rounded border border-zinc-800 bg-zinc-900 font-black text-zinc-600`}>{label}</button>
   return (
     <>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={`${compact ? 'h-9 text-sm' : 'h-11'} flex w-full items-center justify-center rounded-md bg-yellow-300 font-black text-zinc-950 hover:bg-yellow-200`}
+        className={`${compact ? 'h-8 text-xs' : 'h-10 text-sm'} flex w-full items-center justify-center gap-2 rounded bg-zinc-100 font-black text-zinc-950 transition hover:bg-white`}
       >
-        {label}
+        <ExternalLink size={compact ? 13 : 16} />{label}
       </button>
       {open && <ContactModal product={product} methods={methods} onClose={() => setOpen(false)} />}
     </>
@@ -824,16 +1034,14 @@ function ContactModal({ product, methods, onClose }) {
   }, [onClose])
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4">
-      <div className="w-full max-w-sm rounded-lg border border-zinc-800 bg-zinc-950 p-4 shadow-2xl shadow-black">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4" role="presentation" onMouseDown={onClose}>
+      <div className="w-full max-w-sm border border-zinc-700 bg-zinc-950 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.42)]" role="dialog" aria-modal="true" aria-labelledby="contact-modal-title" onMouseDown={(event) => event.stopPropagation()}>
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-xl font-black text-zinc-100">選擇聯絡方式</h2>
-            <p className="mt-1 text-sm text-zinc-400">商品編號：{product.code}</p>
+            <p className="text-xs font-bold text-zinc-500">聯絡購買</p>
+            <h2 id="contact-modal-title" className="mt-1 text-xl font-black text-zinc-100">{product.code}</h2>
           </div>
-          <button type="button" onClick={onClose} className="rounded-md bg-zinc-800 px-3 py-2 text-sm font-bold text-zinc-100">
-            關閉
-          </button>
+          <IconButton label="關閉聯絡視窗" onClick={onClose}><X size={17} /></IconButton>
         </div>
         <div className="space-y-2">
           {methods.map((method) =>
@@ -843,17 +1051,17 @@ function ContactModal({ product, methods, onClose }) {
                 href={buildContactUrl(method.url, product.code)}
                 target="_blank"
                 rel="noreferrer"
-                className="flex h-12 items-center justify-between rounded-md border border-zinc-700 bg-zinc-900 px-3 font-black text-zinc-100 hover:border-yellow-300 hover:text-yellow-300"
+                className="flex h-12 items-center justify-between rounded border border-zinc-700 bg-zinc-900 px-3 font-black text-zinc-100 transition hover:border-zinc-300 hover:bg-zinc-800"
               >
                 <span>{method.label || '聯絡方式'}</span>
-                <span className="text-sm text-zinc-500">詢問 {product.code}</span>
+                <ExternalLink size={16} className="text-zinc-500" />
               </a>
             ) : (
               <button
                 key={method.id}
                 type="button"
                 disabled
-                className="flex h-12 w-full items-center justify-between rounded-md border border-zinc-800 bg-zinc-900/50 px-3 font-black text-zinc-600"
+                className="flex h-12 w-full items-center justify-between rounded border border-zinc-800 bg-zinc-900/50 px-3 font-black text-zinc-600"
               >
                 <span>{method.label || '聯絡方式'}</span>
                 <span className="text-sm">未設定</span>
@@ -864,6 +1072,31 @@ function ContactModal({ product, methods, onClose }) {
       </div>
     </div>
   )
+}
+
+function IconButton({ label, onClick, children, className = '' }) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+      className={`inline-flex h-9 w-9 items-center justify-center rounded transition hover:bg-zinc-800 disabled:opacity-40 ${className}`}
+    >
+      {children}
+    </button>
+  )
+}
+
+function uploadStatusLabel(status) {
+  return {
+    registering: '建立草稿中',
+    queued: '等待上傳',
+    uploading: '上傳中',
+    ready: '已完成',
+    failed: '上傳失敗',
+    cancelled: '已取消',
+  }[status] || '處理中'
 }
 
 function getContactMethods(settings) {
@@ -911,7 +1144,7 @@ function formatPrice(price) {
 
 function EmptyState({ title, text }) {
   return (
-    <section className="rounded-lg border border-dashed border-zinc-700 bg-zinc-950 p-8 text-center">
+    <section className="border border-dashed border-zinc-700 bg-zinc-950 p-8 text-center">
       <h2 className="text-xl font-black text-zinc-100">{title}</h2>
       <p className="mt-2 text-sm text-zinc-400">{text}</p>
     </section>

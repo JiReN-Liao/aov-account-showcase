@@ -2,6 +2,7 @@ import { requireAdmin } from '../../../../_lib/auth.js'
 import { writeAudit } from '../../../../_lib/audit.js'
 import { errorResponse, json, readJson } from '../../../../_lib/http.js'
 import { ALL_STATUSES, expectedVersion, mapProduct } from '../../../../_lib/products.js'
+import { ensureReadyImage, isPublicStatus, productInputFromRow } from '../../../../_lib/uploads.js'
 
 export async function onRequestPost({ request, params, env }) {
   const auth = await requireAdmin(request, env)
@@ -13,6 +14,14 @@ export async function onRequestPost({ request, params, env }) {
   if (!ALL_STATUSES.includes(status)) return errorResponse('Invalid product status.', 400, 'INVALID_STATUS')
 
   const id = String(params.id || '')
+  const currentProduct = await env.DB.prepare('SELECT * FROM products WHERE id = ?1 AND deleted_at IS NULL').bind(id).first()
+  if (!currentProduct) return errorResponse('Product not found.', 404, 'PRODUCT_NOT_FOUND')
+  if (currentProduct.version !== version) return errorResponse('Product has changed. Reload before updating status.', 409, 'VERSION_CONFLICT')
+  try {
+    if (isPublicStatus(status)) await ensureReadyImage(env, productInputFromRow(currentProduct).imageKey)
+  } catch (error) {
+    return errorResponse(error.message, 409, 'IMAGE_NOT_READY')
+  }
   const result = await env.DB.prepare(
     'UPDATE products SET status = ?1, updated_at = ?2, version = version + 1 WHERE id = ?3 AND version = ?4 AND deleted_at IS NULL',
   ).bind(status, new Date().toISOString(), id, version).run()

@@ -10,9 +10,11 @@
     "test": "node --test",
     "smoke:api": "node scripts/smoke-api.mjs",
     "admin": "node scripts/aov-admin.mjs",
+    "library": "node scripts/aov-library.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
+    "lucide-react": "^1.24.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },

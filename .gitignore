@@ -11,6 +11,7 @@ node_modules
 .venv-price/
 price-recognition-report.json
 price-recognition-*.json
+price-fingerprints.*
 docs/price-recognition-samples.md
 __pycache__/
 *.pyc

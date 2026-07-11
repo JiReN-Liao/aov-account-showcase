@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ExternalLink,
   ImagePlus,
+  LoaderCircle,
   LogOut,
   Plus,
   RotateCcw,
@@ -18,6 +19,7 @@ import {
 } from 'lucide-react'
 import {
   cancelUploadBatch,
+  clearAllProducts,
   createUploadBatch,
   defaultSettings,
   deleteImage,
@@ -383,6 +385,7 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
   const [previewProduct, setPreviewProduct] = useState(null)
   const [uploads, setUploads] = useState([])
   const [activeUploadBatch, setActiveUploadBatch] = useState('')
+  const [isClearing, setIsClearing] = useState(false)
   const queues = useRef(new Map())
   const versions = useRef(new Map())
   const uploadControllers = useRef(new Map())
@@ -630,20 +633,23 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
   }
 
   const clearAll = async () => {
+    if (isClearing) return
     if (!products.length) {
       setMessage('目前沒有商品需要清空。')
       return
     }
     if (!confirm(`確定清空全部 ${products.length} 筆雲端商品與圖片？此操作無法復原。`)) return
+    setIsClearing(true)
+    setMessage(`正在刪除 ${products.length} 筆商品，請勿關閉或重複操作…`)
     try {
-      for (const product of products) {
-        await softDeleteProduct(product.id, versions.current.get(product.id) || product.version || 1, adminToken)
-        if (product.imageKey) await deleteImage(product.imageKey, adminToken)
-      }
+      const result = await clearAllProducts(adminToken)
       setProducts([])
-      setMessage('已清空全部雲端測試資料。')
+      setUploads([])
+      setMessage(`已刪除 ${result.deleted ?? products.length} 筆商品；雲端圖片正在背景清理。`)
     } catch (caught) {
       setMessage(caught.message || '清空失敗，請重新整理確認剩餘商品。')
+    } finally {
+      setIsClearing(false)
     }
   }
 
@@ -664,7 +670,9 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
             <Upload size={16} />一鍵上架
           </button>
           <a href="#/settings" className="inline-flex h-9 items-center gap-2 rounded border border-zinc-700 px-3 text-sm font-bold text-zinc-200"><Settings2 size={16} />設定</a>
-          <IconButton label="清空全部測試資料" onClick={clearAll} className="border border-zinc-700 text-zinc-400 hover:border-zinc-400 hover:text-white"><Trash2 size={16} /></IconButton>
+          <IconButton label={isClearing ? '正在清空全部資料' : '清空全部測試資料'} onClick={clearAll} disabled={isClearing} className="border border-zinc-700 text-zinc-400 hover:border-zinc-400 hover:text-white">
+            {isClearing ? <LoaderCircle size={16} className="animate-spin" /> : <Trash2 size={16} />}
+          </IconButton>
           </div>
         </div>
       </section>
@@ -1074,13 +1082,15 @@ function ContactModal({ product, methods, onClose }) {
   )
 }
 
-function IconButton({ label, onClick, children, className = '' }) {
+function IconButton({ label, onClick, children, className = '', disabled = false }) {
   return (
     <button
       type="button"
       title={label}
       aria-label={label}
+      aria-busy={disabled}
       onClick={onClick}
+      disabled={disabled}
       className={`inline-flex h-9 w-9 items-center justify-center rounded transition hover:bg-zinc-800 disabled:opacity-40 ${className}`}
     >
       {children}

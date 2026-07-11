@@ -228,3 +228,7 @@ export function deleteImage(imageKey, token) {
   if (!imageKey) return Promise.resolve()
   return requestJson(`/api/images/${encodeURIComponent(imageKey)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
 }
+
+export function clearAllProducts(token) {
+  return requestJson('/api/admin/products/clear', { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
+}

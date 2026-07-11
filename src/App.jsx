@@ -417,6 +417,7 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
   products.forEach((product) => versions.current.set(product.id, product.version || 1))
 
   const queueProductOperation = (id, operation, patch = {}) => {
+    const previousProduct = products.find((product) => product.id === id)
     if (Object.keys(patch).length) {
       const now = new Date().toISOString()
       setProducts((current) => current.map((product) => (product.id === id ? { ...product, ...patch, updatedAt: now } : product)))
@@ -430,7 +431,13 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
         setProducts((current) => current.map((product) => (product.id === id ? { ...product, version: result.product.version, updatedAt: result.product.updatedAt } : product)))
       }
       return result
-    }).catch((error) => setMessage(error.message || '雲端更新失敗，請重新整理後再處理版本衝突。'))
+    }).catch((error) => {
+      if (previousProduct && Object.keys(patch).length) {
+        setProducts((current) => current.map((product) => product.id === id ? previousProduct : product))
+      }
+      setMessage(error.message || '雲端更新失敗，請重新整理後再處理版本衝突。')
+      return null
+    })
     queues.current.set(id, task)
     return task
   }

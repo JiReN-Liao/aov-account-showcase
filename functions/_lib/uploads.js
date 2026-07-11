@@ -22,9 +22,6 @@ export async function ensureReadyImage(env, imageKey) {
 }
 
 export async function ensurePublishableProduct(env, product) {
-  if (product.price == null || product.price === '' || !Number.isInteger(Number(product.price)) || Number(product.price) <= 0) {
-    throw new Error('A recognized or manually entered price is required before publishing.')
-  }
   await ensureReadyImage(env, product.imageKey)
 }
 

@@ -810,7 +810,11 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
           <table className="w-full min-w-[980px] text-left text-sm">
             <thead className="bg-zinc-900 text-xs uppercase text-zinc-400">
               <tr>
-                <th className="w-10 px-3 py-3"><input type="checkbox" aria-label="選取全部商品" checked={products.length > 0 && selectedIds.size === products.length} onChange={toggleAll} /></th>
+                <th className="w-16 px-2 py-2">
+                  <label className="inline-flex h-11 w-11 cursor-pointer items-center justify-center rounded border border-transparent transition hover:border-zinc-700 hover:bg-zinc-800" title="選取全部商品">
+                    <input type="checkbox" aria-label="選取全部商品" className="h-7 w-7 cursor-pointer accent-zinc-100" checked={products.length > 0 && selectedIds.size === products.length} onChange={toggleAll} />
+                  </label>
+                </th>
                 <th className="px-3 py-3">圖片</th>
                 <th className="px-3 py-3">編號</th>
                 <th className="px-3 py-3">標題</th>
@@ -846,7 +850,11 @@ function AdminPage({ products, settings, setProducts, adminToken, syncError }) {
 function AdminRow({ product, selected, toggleSelected, updateProduct, removeProduct, openPreview, recognizePrice, recognizing, recognitionDisabled }) {
   return (
     <tr className="align-top">
-      <td className="px-3 py-3"><input type="checkbox" aria-label={`選取 ${product.code}`} checked={selected} onChange={() => toggleSelected(product.id)} /></td>
+      <td className="px-2 py-3">
+        <label className="inline-flex h-11 w-11 cursor-pointer items-center justify-center rounded border border-transparent transition hover:border-zinc-700 hover:bg-zinc-900" title={`選取 ${product.code}`}>
+          <input type="checkbox" aria-label={`選取 ${product.code}`} className="h-7 w-7 cursor-pointer accent-zinc-100" checked={selected} onChange={() => toggleSelected(product.id)} />
+        </label>
+      </td>
       <td className="px-3 py-3">
         <button
           type="button"

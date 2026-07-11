@@ -1,5 +1,5 @@
 export const defaultSettings = {
-  siteName: 'AOV帳號展示所',
+  siteName: 'J1ReNの小舖',
   adminUsers: [],
   contactMethods: [
     { id: 'line', label: 'LINE', url: '' },

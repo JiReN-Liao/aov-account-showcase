@@ -148,7 +148,7 @@ function Header({ settings, isAdmin, onLogout }) {
     <header className="sticky top-0 z-30 border-b border-zinc-800 bg-black/95">
       <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3 px-3 py-3 sm:px-5">
         <a href="#/" className="flex min-w-0 items-center gap-2.5" aria-label={settings.siteName || defaultSettings.siteName}>
-          <img src={brandLogo} alt="J1ReN 的小舖" className="h-9 w-9 shrink-0 rounded-sm object-cover invert" />
+          <img src={brandLogo} alt="J1ReNの小舖" className="h-9 w-9 shrink-0 rounded-sm object-cover invert" />
           <span className="truncate text-sm font-black text-white sm:text-base">{settings.siteName || defaultSettings.siteName}</span>
         </a>
         <nav className="flex shrink-0 items-center gap-1 text-sm">
@@ -341,7 +341,7 @@ function StoreFooter({ settings }) {
   return (
     <footer className="mt-10 border-t border-zinc-800 py-8 sm:mt-14 sm:py-10">
       <div className="flex flex-col items-center justify-between gap-6 sm:flex-row">
-        <img src={brandLogo} alt="J1ReN 的小舖" className="h-32 w-32 shrink-0 rounded object-cover invert sm:h-36 sm:w-36" />
+        <img src={brandLogo} alt="J1ReNの小舖" className="h-32 w-32 shrink-0 rounded object-cover invert sm:h-36 sm:w-36" />
         <div className="flex items-center gap-2">
           {methods.map((method) => {
             const brand = contactBrand(method)

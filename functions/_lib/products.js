@@ -2,7 +2,7 @@ export const PUBLIC_STATUSES = ['available']
 export const ALL_STATUSES = ['draft', 'available', 'reserved', 'sold', 'hidden']
 
 export const PUBLIC_SETTINGS = {
-  siteName: 'AOV帳號展示所',
+  siteName: 'J1ReNの小舖',
   contactMethods: [
     { id: 'line', label: 'LINE', url: '' },
     { id: 'facebook', label: 'Facebook', url: '' },
